@@ -197,38 +197,26 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                         break;
                     }
                     int fd = it->fd;
-                    clients[fd].appendToBuffer(recvbuff, result);
+                    clients[fd].appendToBuffer(recvbuff, result); // append received data (may contain partial or multiple messages)
                     size_t nlPos = 0;
-                    while (1)
+                    while (1) // process all complete lines ending with '\n'
                     {
-                        nlPos = clients[fd].getBuffer().find('\n', 0);
-                        if(nlPos != std::string::npos)
+                        nlPos = clients[fd].getBuffer().find('\n', 0); //find position of first '\n' in the buffer (end of a complete IRC line)
+                        if(nlPos != std::string::npos) // if you find it
                         {
-                            std::string line = clients[fd].getBuffer().substr(0, nlPos);
-                            if (!line.empty() && line[line.size() - 1] == '\r')
-                                line.erase(line.size() - 1);
-                            clients[fd].eraseFromBuffer(0, nlPos+1);
+                            std::string line = clients[fd].getBuffer().substr(0, nlPos); //extract one complete line (without '\n')
+                            if (!line.empty() && line[line.size() - 1] == '\r') //if the line is finishing with '\r'
+                                line.erase(line.size() - 1);                    //then remove the '\r' also
+                            clients[fd].eraseFromBuffer(0, nlPos+1); //and remove this line from the clients buffer (because the buffer should keep only the incomplete lines)
 
                             //find the COMMANDS and ARGUMENTS
                             parse(fd, line, clients);
                         }
-                        else
+                        else //if you don't find any '\n' break out of the loop leaving the clients buffer with  any remaining incomplete data and check in the for loop for the next fd if it has any event 
                         {
                             break;
                         }
                     }
-                    /*std::string msg = "Server received your message\n";
-                    if (send(it->fd, msg.c_str(), msg.size(), 0) <= 0)
-                    {
-                        std::cerr << "send() failed!" << std::endl;
-                        close(it->fd);
-                        close(serverFd);
-                        return 1;
-                    }
-                    else
-                    {
-                        std::cout << "message sent to client!" << std::endl;
-                    }*/
                 }
             }
         }
