@@ -6,7 +6,7 @@
 #include <cctype>
 #include <string>
 
-size_t posOfWhitespace(std::string line)
+static size_t posOfWhitespace(std::string line)
 {
     size_t pos;
 
@@ -15,7 +15,7 @@ size_t posOfWhitespace(std::string line)
     pos = line.find(' ', 0);
 }
 
-std::string trimLeadingWhitespace(std::string line)
+static std::string trimLeadingWhitespace(std::string line)
 {
     while (!line.empty() && (line[0] == ' ' || line[0] == '\t'))
         line.erase(0, 1);
@@ -23,7 +23,7 @@ std::string trimLeadingWhitespace(std::string line)
     return line;
 }
 
-std::string toUpper(std::string s)
+static std::string toUpper(std::string s)
 {
     for (std::string::size_type i = 0; i < s.size(); ++i)
     {
@@ -141,7 +141,7 @@ static void handleCommand(int fd, ParsedMessage parsed)
         handleMode(fd, args);*/
 }
 
-ParsedMessage parseMessage(std::string line)
+static ParsedMessage parseMessage(std::string line)
 {
     ParsedMessage parsed;
     std::string command;
