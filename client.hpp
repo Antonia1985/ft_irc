@@ -33,7 +33,7 @@ class Client
         void setRegistered(bool r);
 
         void appendToBuffer(const std::string& data);
-        void Client::appendToBuffer(const char* data, size_t len);
+        void appendToBuffer(const char* data, size_t len);
         void eraseFromBuffer(size_t pos, size_t len);
 
 };

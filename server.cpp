@@ -89,7 +89,7 @@ int listenSocket(int serverFd)
     return 1;
 }
 
-int pollSockets(int serverFd, std::vector<pollfd>& fds)
+int pollSockets( std::vector<pollfd>& fds)
 { 
     int ret = poll(&fds[0], fds.size(), -1);   
     if(ret == -1)
@@ -120,7 +120,7 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
         int clientFd;        
         pollfd clientStrctFd;
         std::vector<pollfd> newFds;
-        int status = pollSockets(serverFd, fds);
+        int status = pollSockets(fds);
         if(status == 2)
         {
             continue;
@@ -137,7 +137,6 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
             {
                 if(it->fd == serverFd) //SERVER FD ACTION
                 {
-                    
                     //client tries to connect
                     while(1)
                     {                        
@@ -178,7 +177,7 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                 }
                 else //CLIENT FD ACTION : it->fd
                 {
-                    char recvbuff[1024];                    
+                    char recvbuff[1024];
                     ssize_t result = recv(it->fd, recvbuff, 1023, 0);
                     if ((result < 0))
                     {

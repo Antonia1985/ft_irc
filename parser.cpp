@@ -6,15 +6,6 @@
 #include <cctype>
 #include <string>
 
-static size_t posOfWhitespace(std::string line)
-{
-    size_t pos;
-
-    if (!line.empty() && (line[0] == ' ' || line[0] == '\t'))
-
-    pos = line.find(' ', 0);
-}
-
 static std::string trimLeadingWhitespace(std::string line)
 {
     while (!line.empty() && (line[0] == ' ' || line[0] == '\t'))
@@ -32,27 +23,24 @@ static std::string toUpper(std::string s)
     return s;
 }
 
-void sendMsg(int clientFd, std::string msg) // TO DO!!!
+static void sendMsg(int clientFd, std::string msg) // TO DO!!!
 {
-    //std::string msg = "Server received your message\n";
     if (send(clientFd, msg.c_str(), msg.size(), 0) <= 0)
     {
         std::cerr << "send() failed!" << std::endl;
-        //close(clientFd);
-        //close(serverFd);
-        //return 1;
     }
-    /*else
-    {
-        std::cout << "message sent to client!" << std::endl;
-    }*/
 }
 
-static void handlePing(int fd, ParsedMessage parsed)
+static void handlePing(int fd, const ParsedMessage& parsed)
 {
     std::string msg;
     if(!parsed.params.empty())
-        msg = "PONG" + ' ' + parsed.params[0] + "\r\n";
+    {        
+        if((parsed.lastParamTrailing == true) && (parsed.params.size() == 1))
+            msg = std::string("PONG :") + parsed.params[0] + "\r\n";
+        else
+            msg = std::string("PONG ") + parsed.params[0] + "\r\n";
+    }        
     else
         msg = "PONG\r\n";
     sendMsg(fd, msg);
@@ -178,6 +166,7 @@ static ParsedMessage parseMessage(std::string line)
         if(args[0] == ':') //ch
         {
             parsed.params.push_back(args.substr(1));
+            parsed.lastParamTrailing = true;
             break;
         }
         
@@ -202,6 +191,7 @@ static ParsedMessage parseMessage(std::string line)
 //find the COMMANDS and ARGUMENTS
 void parse (int fd, std::string& line, std::map<int, Client>& clients)
 {
+    (void)clients;
     ParsedMessage parsed = parseMessage(line);
     handleCommand(fd, parsed);
 }

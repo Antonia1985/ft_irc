@@ -8,6 +8,9 @@ struct ParsedMessage
 {
     std::string command;
     std::vector<std::string> params;
+    bool lastParamTrailing;
+
+    ParsedMessage();
 };
 
 #endif
