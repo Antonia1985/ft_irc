@@ -1,10 +1,10 @@
 #include "parser.hpp"
-#include "parsedMessage.hpp"
-#include <iostream>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <cctype>
-#include <string>
+//#include "errors.hpp"
+//#include <iostream>
+//#include <unistd.h>
+//#include <sys/socket.h>
+//#include <cctype>
+
 
 static std::string trimLeadingWhitespace(std::string line)
 {
@@ -14,7 +14,7 @@ static std::string trimLeadingWhitespace(std::string line)
     return line;
 }
 
-static std::string toUpper(std::string s)
+std::string toUpper(std::string s)
 {
     for (std::string::size_type i = 0; i < s.size(); ++i)
     {
@@ -23,113 +23,8 @@ static std::string toUpper(std::string s)
     return s;
 }
 
-static void sendMsg(int clientFd, std::string msg) // TO DO!!!
-{
-    if (send(clientFd, msg.c_str(), msg.size(), 0) <= 0)
-    {
-        std::cerr << "send() failed!" << std::endl;
-    }
-}
 
-static void handlePing(int fd, const ParsedMessage& parsed)
-{
-    std::string msg;
-    if(!parsed.params.empty())
-    {        
-        if((parsed.lastParamTrailing == true) && (parsed.params.size() == 1))
-            msg = std::string("PONG :") + parsed.params[0] + "\r\n";
-        else
-            msg = std::string("PONG ") + parsed.params[0] + "\r\n";
-    }        
-    else
-        msg = "PONG\r\n";
-    sendMsg(fd, msg);
-}
-
-/*static void handleNick(int fd, std::string args)
-{
-
-}
-
-static void handlePass(int fd, std::string args)
-{
-
-}
-
-static void handleUser(int fd, std::string args)
-{
-
-}
-
-static void handleJoin(int fd, std::string args)
-{
-
-}
-
-static void handlePart(int fd, std::string args)
-{
-
-}
-
-static void handlePrivmsg(int fd, std::string args)
-{
-
-}
-
-static void handleNotice(int fd, std::string args)
-{
-
-}
-
-static void handleKick(int fd, std::string args)
-{
-
-}
-
-static void handleInvite(int fd, std::string args)
-{
-
-}
-
-static void handleTopic(int fd, std::string args)
-{
-
-}
-
-static void handleMode(int fd, std::string args)
-{
-
-}*/
-
-static void handleCommand(int fd, ParsedMessage parsed)
-{
-    if (parsed.command == "PING")
-        handlePing(fd, parsed);
-    /*if (command == "NICK")
-        handleNick(fd, args);
-    if (command == "PASS")
-        handlePass(fd, args);
-    if (command == "USER")
-        handleUser(fd, args);   
-    if (command == "JOIN")
-        handleJoin(fd, args);
-    if (command == "PART")
-        handlePart(fd, args);
-    if (command == "PRIVMSG")
-        handlePrivmsg(fd, args);
-    if (command == "NOTICE")
-        handleNotice(fd, args);
-    if (command == "KICK")
-        handleKick(fd, args);
-    if (command == "INVITE")
-        handleInvite(fd, args);
-    if (command == "TOPIC")
-        handleTopic(fd, args);
-    if (command == "MODE")
-        handleMode(fd, args);*/
-}
-
-static ParsedMessage parseMessage(std::string line)
+ParsedMessage parseMessage(std::string line)
 {
     ParsedMessage parsed;
     std::string command;
@@ -151,7 +46,7 @@ static ParsedMessage parseMessage(std::string line)
     {
         command = line; //the command is the full line
         args = "";  //and args are empty
-    }
+    }    
     parsed.command = toUpper(command); // save the command in upper case
 
     std::string arg;
@@ -189,12 +84,12 @@ static ParsedMessage parseMessage(std::string line)
 }
 
 //find the COMMANDS and ARGUMENTS
-void parse (int fd, std::string& line, std::map<int, Client>& clients)
+/*void parse (int fd, std::string& line, std::map<int, Client>& clients)
 {
     (void)clients;
     ParsedMessage parsed = parseMessage(line);
     handleCommand(fd, parsed);
-}
+}*/
 
 
 /*

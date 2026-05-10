@@ -2,7 +2,7 @@ NAME     = ircserv
 CXX      = c++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++98
 
-SRC = main.cpp parser.cpp server.cpp client.cpp parsedMessage.cpp
+SRC = main.cpp parser.cpp server.cpp client.cpp parsedMessage.cpp commandHandler.cpp errors.cpp
 OBJ = $(SRC:.cpp=.o)
 #DEPS = Animal.hpp Cat.hpp Dog.hpp WrongAnimal.hpp WrongCat.hpp Brain.hpp
 

@@ -12,6 +12,7 @@ class Client
         int fd;
         std::string buffer;
         std::string nickname;
+        std::string nicknameToUp;
         std::string username;
         bool passOk;
         bool registered;
@@ -21,6 +22,7 @@ class Client
         int getFd() const;
         const std::string& getBuffer() const;
         const std::string& getNickname() const;
+        const std::string& getNicknameToUp() const;
         const std::string& getUsername() const;
         bool getPassOk() const;
         bool getRegistered() const;
@@ -28,6 +30,7 @@ class Client
         void setFd(int f);
         void setBuffer(const std::string& buf);
         void setNickname(const std::string& nicknm);
+        void setNicknameToUp(const std::string& nicknameToUp);
         void setUsername(const std::string& usernm) ;
         void setPassOk(bool p);
         void setRegistered(bool r);
@@ -39,6 +42,6 @@ class Client
 };
 
 void removeClient(std::vector<pollfd>::iterator it, 
-                std::map<int, Client>& clients, std::vector<pollfd>& fds);
+                std::map<int, Client>& clients, std::vector<pollfd>& fds, std::map<std::string, int>& fdByNickUp);
 
 #endif

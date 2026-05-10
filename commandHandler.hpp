@@ -1,0 +1,11 @@
+#ifndef COMMANDHANDLER_HPP
+#define COMMANDHANDLER_HPP
+
+#include "parsedMessage.hpp"
+#include "client.hpp"
+#include <map>
+
+void handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp);
+void sendMsg(int clientFd, std::string msg);
+
+#endif

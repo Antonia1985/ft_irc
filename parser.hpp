@@ -2,9 +2,11 @@
 #define PARSER_HPP
 
 #include <string>
-#include <map>
 #include "client.hpp"
+#include "parsedMessage.hpp"
 
-void parse (int fd, std::string& line, std::map<int, Client>& clients);
+
+ParsedMessage parseMessage(std::string line);
+std::string toUpper(std::string s);
 
 #endif

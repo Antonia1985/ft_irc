@@ -67,10 +67,11 @@ int main(int ac, char** av)
     createFdPollStrct(serverFd, serverStrctFd);    
     fds.push_back(serverStrctFd);   
 
-    std::map<int, Client> clients;
+    std::map<int, Client> clientsByFd;
+    std::map<std::string, int> fdByNick;
     signal(SIGINT, handleSignal);
 
-    int result = pollLoop(serverFd, fds, clients);
+    int result = pollLoop(serverFd, fds, clientsByFd, fdByNick);
     
     std::vector<pollfd>::iterator it;
     for(it = fds.begin(); it != fds.end(); ++it)

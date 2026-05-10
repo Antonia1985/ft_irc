@@ -1,5 +1,7 @@
 #include "server.hpp"
 #include "parser.hpp"
+#include "parsedMessage.hpp"
+#include "commandHandler.hpp"
 #include <sys/socket.h>
 #include <cerrno>
 #include <iostream>
@@ -113,7 +115,7 @@ void createFdPollStrct(int serverFd, pollfd& serverStrctFd)
     serverStrctFd.revents = 0;
 }
  
-int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clients) //under construct
+int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, std::map<std::string, int> fdByNickUp)
 {
     while(running)
     {
@@ -165,11 +167,13 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             newClient.setFd(clientFd);
                             newClient.setBuffer("");
                             newClient.setNickname("");
+                            newClient.setNicknameToUp("");
                             newClient.setUsername("");
                             newClient.setPassOk(false);
                             newClient.setRegistered(false);
-                            clients[clientFd] = newClient;
-
+                            clientsByFd[clientFd] = newClient;
+                            //I don't need to add it to fdByNickUp map because no nickname exists yet
+                            
                             newFds.push_back(clientStrctFd);
                             std::cout << "Client connected!" << std::endl;
                         }                        
@@ -186,30 +190,34 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             continue;
                         }
                         std::cerr << "recv() failed!" << std::endl;
-                        removeClient(it, clients, fds);
+                        removeClient(it, clientsByFd, fds, fdByNickUp);
                         break;
                     }
                     else if(result == 0)
                     {
                         std::cout << "Client disconnected!" << std::endl;
-                        removeClient(it, clients, fds);
+                        removeClient(it, clientsByFd, fds, fdByNickUp);
                         break;
                     }
                     int fd = it->fd;
-                    clients[fd].appendToBuffer(recvbuff, result); // append received data (may contain partial or multiple messages)
+                    clientsByFd[fd].appendToBuffer(recvbuff, result); // append received data (may contain partial or multiple messages)
                     size_t nlPos = 0;
                     while (1) // process all complete lines ending with '\n'
                     {
-                        nlPos = clients[fd].getBuffer().find('\n', 0); //find position of first '\n' in the buffer (end of a complete IRC line)
+                        nlPos = clientsByFd[fd].getBuffer().find('\n', 0); //find position of first '\n' in the buffer (end of a complete IRC line)
                         if(nlPos != std::string::npos) // if you find it
                         {
-                            std::string line = clients[fd].getBuffer().substr(0, nlPos); //extract one complete line (without '\n')
+                            std::string line = clientsByFd[fd].getBuffer().substr(0, nlPos); //extract one complete line (without '\n')
                             if (!line.empty() && line[line.size() - 1] == '\r') //if the line is finishing with '\r'
                                 line.erase(line.size() - 1);                    //then remove the '\r' also
-                            clients[fd].eraseFromBuffer(0, nlPos+1); //and remove this line from the clients buffer (because the buffer should keep only the incomplete lines)
+                            clientsByFd[fd].eraseFromBuffer(0, nlPos+1); //and remove this line from the clients buffer (because the buffer should keep only the incomplete lines)
 
-                            //find the COMMANDS and ARGUMENTS
-                            parse(fd, line, clients);
+                            //fill struct ParsedMessage with COMMANDS and ARGUMENTS
+                            ParsedMessage parsed = parseMessage(line);
+                            
+                            //call the command handler
+                            handleCommand(fd, parsed, clientsByFd, fdByNickUp);
+
                         }
                         else //if you don't find any '\n' break out of the loop leaving the clients buffer with  any remaining incomplete data and check in the for loop for the next fd if it has any event 
                         {
