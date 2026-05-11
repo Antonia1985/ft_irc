@@ -71,7 +71,7 @@ int main(int ac, char** av)
     std::map<std::string, int> fdByNick;
     signal(SIGINT, handleSignal);
 
-    int result = pollLoop(serverFd, fds, clientsByFd, fdByNick);
+    int result = pollLoop(serverFd, fds, clientsByFd, fdByNick, pass);
     
     std::vector<pollfd>::iterator it;
     for(it = fds.begin(); it != fds.end(); ++it)

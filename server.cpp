@@ -115,7 +115,7 @@ void createFdPollStrct(int serverFd, pollfd& serverStrctFd)
     serverStrctFd.revents = 0;
 }
  
-int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, std::map<std::string, int> fdByNickUp)
+int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, std::map<std::string, int> fdByNickUp, const std::string& pass)
 {
     while(running)
     {
@@ -216,7 +216,7 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             ParsedMessage parsed = parseMessage(line);
                             
                             //call the command handler
-                            handleCommand(fd, parsed, clientsByFd, fdByNickUp);
+                            handleCommand(fd, parsed, clientsByFd, fdByNickUp, pass);
 
                         }
                         else //if you don't find any '\n' break out of the loop leaving the clients buffer with  any remaining incomplete data and check in the for loop for the next fd if it has any event 

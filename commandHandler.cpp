@@ -30,6 +30,32 @@ static void handlePing(int fd, const ParsedMessage& parsed)
     sendMsg(fd, msg);
 }
 
+static void handlePass(int fd, const ParsedMessage& parsed, 
+                        std::map<int, Client>& clientsByFd, const std::string& serverPass)
+{
+    Client& client = clientsByFd[fd];
+    std::string nickname = client.getNickname();   
+
+    if(client.getRegistered() == true)  //if already registered
+    {
+        sendError(fd, 462, parsed, nickname, "");
+        return;
+    }
+    if(parsed.params.size() == 0) //if no arguments
+    {
+        sendError(fd, 461, parsed, nickname, "");
+        return;
+    }
+    if(serverPass != parsed.params[0]) //if password doesn't match server's password (if extra args exist, they are ignored like real irc)
+    {
+        sendError(fd, 464, parsed, nickname, "");
+        std::cout << clientsByFd[fd].getPassOk() << std::endl; //testin the clientsByFd is filled
+        return;
+    }
+    //success case
+    client.setPassOk(true);
+}
+
 int validNick(const std::string& nick)
 {
     if (nick.empty())
@@ -44,6 +70,8 @@ int validNick(const std::string& nick)
             nick[i] == ':' || nick[i] == ',')
             return 3;
     }
+    if (nick.size() >9)
+        return 3;
 
     return 1;
 }
@@ -87,17 +115,12 @@ static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client
     //std::cout << clientsByFd[fd].getNicknameToUp() << std::endl; //testin the clientsByFd is filled 
 }
 
-/*static void handlePass(int fd, std::string args)
+static void handleUser(int fd, const ParsedMessage& parsed)
 {
 
 }
 
-static void handleUser(int fd, std::string args)
-{
-
-}
-
-static void handleJoin(int fd, std::string args)
+/*static void handleJoin(int fd, std::string args)
 {
 
 }
@@ -137,17 +160,17 @@ static void handleMode(int fd, std::string args)
 
 }*/
 
-void handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp)
+void handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp, const std::string& serverPass)
 {
     if (parsed.command == "PING")
         handlePing(fd, parsed);
     else if (parsed.command == "NICK")
         handleNick(fd, parsed, clientsByFd, fdByNickUp);
-    /*else if (command == "PASS")
-        handlePass(fd, args);
-    else if (command == "USER")
-        handleUser(fd, args);   
-    else if (command == "JOIN")
+    else if (parsed.command == "PASS")
+        handlePass(fd, parsed, clientsByFd, serverPass);
+    else if (parsed.command == "USER")
+        handleUser(fd, parsed);   
+     /*else if (command == "JOIN")
         handleJoin(fd, args);
     else if (command == "PART")
         handlePart(fd, args);
@@ -179,5 +202,26 @@ must not be empty
 must not contain spaces
 should start with a letter
 should not contain # , :
+
+
+----------------------------------------------
+Complete realistic flow
+
+Client → Server:
+PASS pass
+NICK alice
+USER alice 0 * :Alice
+JOIN #general
+PRIVMSG #general :Hello!
+
+Server → Client:
+001 alice :Welcome to the IRC server
+-----------------------------------------------
+
+once correct PASS received → passOk = true
+later wrong PASS does NOT unset it
+Because PASS is usually treated as:
+authentication succeeded
+not as a continuously mutable state.
 
 */
