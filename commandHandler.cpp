@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sys/socket.h>
 #include <string>
+#include <cctype>
 
 
 void sendMsg(int clientFd, std::string msg)
@@ -30,8 +31,8 @@ static void handlePing(int fd, const ParsedMessage& parsed)
     sendMsg(fd, msg);
 }
 
-static void handlePass(int fd, const ParsedMessage& parsed, 
-                        std::map<int, Client>& clientsByFd, const std::string& serverPass)
+static int handlePass(int fd, const ParsedMessage& parsed, 
+                        std::map<int, Client>& clientsByFd, const std::string& serverPass) //returns 0 when client must disconnect
 {
     Client& client = clientsByFd[fd];
     std::string nickname = client.getNickname();   
@@ -39,21 +40,22 @@ static void handlePass(int fd, const ParsedMessage& parsed,
     if(client.getRegistered() == true)  //if already registered
     {
         sendError(fd, 462, parsed, nickname, "");
-        return;
+        return 1;
     }
     if(parsed.params.size() == 0) //if no arguments
     {
         sendError(fd, 461, parsed, nickname, "");
-        return;
+        return 1;
     }
     if(serverPass != parsed.params[0]) //if password doesn't match server's password (if extra args exist, they are ignored like real irc)
     {
         sendError(fd, 464, parsed, nickname, "");
         std::cout << clientsByFd[fd].getPassOk() << std::endl; //testin the clientsByFd is filled
-        return;
+        return 0;
     }
     //success case
     client.setPassOk(true);
+    return 1;
 }
 
 int validNick(const std::string& nick)
@@ -115,8 +117,70 @@ static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client
     //std::cout << clientsByFd[fd].getNicknameToUp() << std::endl; //testin the clientsByFd is filled 
 }
 
-static void handleUser(int fd, const ParsedMessage& parsed)
+static int validUser(int fd, const ParsedMessage& parsed)
 {
+    std::string user = parsed.params[0];
+    for(size_t i = 0; i < user.size(); i++)
+    {
+        unsigned char c = static_cast<unsigned char>(user[i]);
+        if(std::isalnum(static_cast<unsigned char>(c))
+            || c == '_' || c == '-') 
+        {
+            
+            return 0;
+        }
+    }
+    return 1;
+}
+
+std::string buildRealName(const ParsedMessage& parsed)
+{
+    std::string realName = parsed.params[3];
+    for(size_t i = 4; i < parsed.params.size(); i++)
+    {
+        realName += std::string(" ") + parsed.params[i];
+    }
+    return realName;
+}
+static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd)
+{
+    Client& client = clientsByFd[fd];
+    std::string nickname = client.getNickname();   
+
+    // handling <username>
+    if(parsed.params.size() < 4) //if less arguments
+    {
+        sendError(fd, 461, parsed, nickname, "");
+        return;
+    }
+    if(client.getRegistered() == true)  //if already registered: do not let USER change after registration
+    {
+        sendError(fd, 462, parsed, nickname, "");
+        return;
+    }
+    if(!validUser(fd, parsed)) //if username has an invalid char
+    {
+        sendMsg(fd, "ERROR :Invalid username (must contain only letters/numbers)");
+    }
+    if(parsed.params[0].size() > 10) //if username is big
+    {
+        sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
+        return;
+    }
+    //success case
+    clientsByFd[fd].setUsername(parsed.params[0]);
+
+    // handling <realname>
+    std::string realName;
+    if (parsed.params.size() > 4) // if more than 4 params then built the real name appending the last params
+    {
+        realName = buildRealName(parsed);
+    }
+    if (realName.size() > 50)//if real name is big
+    {
+        sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
+        return;
+    }
 
 }
 
@@ -160,17 +224,24 @@ static void handleMode(int fd, std::string args)
 
 }*/
 
-void handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp, const std::string& serverPass)
+int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp, const std::string& serverPass)
 {
     if (parsed.command == "PING")
+    {
         handlePing(fd, parsed);
+    }        
     else if (parsed.command == "NICK")
+    {
         handleNick(fd, parsed, clientsByFd, fdByNickUp);
+    }        
     else if (parsed.command == "PASS")
-        handlePass(fd, parsed, clientsByFd, serverPass);
+    {
+        if(!handlePass(fd, parsed, clientsByFd, serverPass))
+            return 0;
+    }
     else if (parsed.command == "USER")
-        handleUser(fd, parsed);   
-     /*else if (command == "JOIN")
+        handleUser(fd, parsed,clientsByFd);
+    /*else if (command == "JOIN")
         handleJoin(fd, args);
     else if (command == "PART")
         handlePart(fd, args);
@@ -185,25 +256,17 @@ void handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsB
     else if (command == "TOPIC")
         handleTopic(fd, args);
     else if (command == "MODE")
-        handleMode(fd, args);*/
+        handleMode(fd, args);*/        
     //validate the command
     else
     {
         sendError(fd, 421, parsed, "", "");
     }
+    return 1;
 }
 
 
 /*
-
-A nickname:
-
-must not be empty
-must not contain spaces
-should start with a letter
-should not contain # , :
-
-
 ----------------------------------------------
 Complete realistic flow
 
@@ -216,7 +279,9 @@ PRIVMSG #general :Hello!
 
 Server → Client:
 001 alice :Welcome to the IRC server
+
 -----------------------------------------------
+PASS:
 
 once correct PASS received → passOk = true
 later wrong PASS does NOT unset it
@@ -224,4 +289,39 @@ Because PASS is usually treated as:
 authentication succeeded
 not as a continuously mutable state.
 
+----------------------------------------------
+NICK:
+
+must not be empty
+must not contain spaces
+should start with a letter
+should not contain # , :
+
+----------------------------------------------
+USER:
+USER <username> 0 * :<realname>
+
+<username>
+- required during registration
+- not necessarily unique
+- allowed chars:
+    a-z
+    A-Z
+    0-9
+    _
+    -
+- reasonable max: 9 or 10 chars, or define your own limit
+- case-sensitive is okay, because it is not the main identity
+- do not let USER change after registration
+
+<realname>
+-realname is REQUIRED. 
+ Although some irc servers allow it to be " " space. My implementation requires it.
+-you should reject:
+    NUL   '\0'
+    CR    '\r'
+    LF    '\n'
+-permissive logic:
+ Everything from param[3] and after are part of real name
+-size: 50 chars are ok (IRC: 512  bytes for the entire irc line)
 */

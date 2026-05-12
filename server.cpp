@@ -216,7 +216,12 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             ParsedMessage parsed = parseMessage(line);
                             
                             //call the command handler
-                            handleCommand(fd, parsed, clientsByFd, fdByNickUp, pass);
+                            if (!handleCommand(fd, parsed, clientsByFd, fdByNickUp, pass))
+                            {
+                                std::cout << "Client disconnected!" << std::endl;
+                                removeClient(it, clientsByFd, fds, fdByNickUp); //!!!I get segmantation fault
+                                break;
+                            }
 
                         }
                         else //if you don't find any '\n' break out of the loop leaving the clients buffer with  any remaining incomplete data and check in the for loop for the next fd if it has any event 
