@@ -116,7 +116,8 @@ void createFdPollStrct(int serverFd, pollfd& serverStrctFd)
     serverStrctFd.revents = 0;
 }
  
-int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, std::map<std::string, int> fdByNickUp, const std::string& pass, std::map<std::string, Channel>& channels)
+int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, 
+            std::map<std::string, int> fdByNickUp, const std::string& pass, std::map<std::string, Channel>& channels)
 {
     while(running)
     {

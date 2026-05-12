@@ -15,6 +15,7 @@ int reusableImmediately(int fd);
 int bindSocket(int port,  int serverFd);
 int listenSocket(int serverFd);
 void createFdPollStrct(int serverFd, pollfd& serverStrctFd);
-int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clients, std::map<std::string, int> fdByNick, const std::string& pass, std::map<std::string, Channel>& channels);
+int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clients,
+            std::map<std::string, int> fdByNick, const std::string& pass, std::map<std::string, Channel>& channels);
 
 #endif

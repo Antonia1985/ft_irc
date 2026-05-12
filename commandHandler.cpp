@@ -200,7 +200,7 @@ static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client
 
     // handling <realname>
     std::string realName;
-    if (parsed.params.size() > 4) // if more than 4 params then built the real name appending the last params
+    if (parsed.params.size() > 3) // if more than 4 params then built the real name appending the last params
     {
         realName = buildRealName(parsed);
     }
@@ -209,6 +209,11 @@ static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client
         sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
         return;
     }
+    if(realName.find_first_of("\0\r\n") != std::string::npos)
+    {
+        
+    }
+
 
 }
 /*static void handleJoin(int fd, std::string args)
