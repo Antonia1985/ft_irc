@@ -1,4 +1,5 @@
 #include "commandHandler.hpp"
+#include "Channel.hpp"
 #include "parser.hpp"
 #include "errors.hpp"
 #include <iostream>
@@ -6,6 +7,32 @@
 #include <string>
 #include <cctype>
 
+
+void handleJoin(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, Channel>& channels) {
+    if (parsed.params.empty())
+    {
+        sendError(fd, 461, parsed, clientsByFd[fd].getNickname(), "");
+        return;
+    }
+    
+    std::string channelName = parsed.params[0];
+    std::map<std::string, Channel>::iterator it = channels.find(channelName);
+
+    if(it != channels.end())
+    {
+        it->second.addUser(fd);
+        clientsByFd[fd].addChannel(channelName);
+        std::cout << "exist" << std::endl;
+    }
+    else
+    {
+        channels[channelName] = Channel(channelName);
+        channels[channelName].addUser(fd);
+        channels[channelName].addOperator(fd);
+        clientsByFd[fd].addChannel(channelName);
+        std::cout << "doesnt exist" << std::endl;
+    }
+}
 
 void sendMsg(int clientFd, std::string msg)
 {
@@ -119,6 +146,7 @@ static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client
 
 static int validUser(int fd, const ParsedMessage& parsed)
 {
+    (void)fd;
     std::string user = parsed.params[0];
     for(size_t i = 0; i < user.size(); i++)
     {
@@ -183,7 +211,6 @@ static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client
     }
 
 }
-
 /*static void handleJoin(int fd, std::string args)
 {
 
@@ -224,7 +251,8 @@ static void handleMode(int fd, std::string args)
 
 }*/
 
-int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp, const std::string& serverPass)
+
+int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp, const std::string& serverPass, std::map<std::string, Channel>& channels)
 {
     if (parsed.command == "PING")
     {
@@ -258,6 +286,8 @@ int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsBy
     else if (command == "MODE")
         handleMode(fd, args);*/        
     //validate the command
+    else if(parsed.command == "JOIN")
+        handleJoin(fd, parsed, clientsByFd, channels);
     else
     {
         sendError(fd, 421, parsed, "", "");

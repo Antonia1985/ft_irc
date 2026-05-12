@@ -2,6 +2,7 @@
 #include "parser.hpp"
 #include "parsedMessage.hpp"
 #include "commandHandler.hpp"
+#include "Channel.hpp"
 #include <sys/socket.h>
 #include <cerrno>
 #include <iostream>
@@ -115,7 +116,7 @@ void createFdPollStrct(int serverFd, pollfd& serverStrctFd)
     serverStrctFd.revents = 0;
 }
  
-int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, std::map<std::string, int> fdByNickUp, const std::string& pass)
+int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, std::map<std::string, int> fdByNickUp, const std::string& pass, std::map<std::string, Channel>& channels)
 {
     while(running)
     {
@@ -143,7 +144,7 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                     while(1)
                     {                        
                         clientFd = accept(serverFd, NULL, NULL);
-                        if ((clientFd == -1)) //accept() failed
+                        if (clientFd == -1) //accept() failed
                         {
                             if((errno == EWOULDBLOCK) || (errno == EAGAIN))
                             {
@@ -216,7 +217,7 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             ParsedMessage parsed = parseMessage(line);
                             
                             //call the command handler
-                            if (!handleCommand(fd, parsed, clientsByFd, fdByNickUp, pass))
+                            if (!handleCommand(fd, parsed, clientsByFd, fdByNickUp, pass, channels))
                             {
                                 std::cout << "Client disconnected!" << std::endl;
                                 removeClient(it, clientsByFd, fds, fdByNickUp); //!!!I get segmantation fault

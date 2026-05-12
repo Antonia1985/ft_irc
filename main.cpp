@@ -1,6 +1,7 @@
 #include "parser.hpp"
 #include "client.hpp"
 #include "server.hpp"
+#include "Channel.hpp"
 #include <iostream>
 #include <string>
 #include <cstdlib>
@@ -69,9 +70,10 @@ int main(int ac, char** av)
 
     std::map<int, Client> clientsByFd;
     std::map<std::string, int> fdByNick;
+    std::map<std::string, Channel> channels;
     signal(SIGINT, handleSignal);
 
-    int result = pollLoop(serverFd, fds, clientsByFd, fdByNick, pass);
+    int result = pollLoop(serverFd, fds, clientsByFd, fdByNick, pass, channels);
     
     std::vector<pollfd>::iterator it;
     for(it = fds.begin(); it != fds.end(); ++it)

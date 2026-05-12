@@ -1,10 +1,12 @@
-#ifndef CLIENT_HPP
-#define CLIENT_HPP
+#pragma once
 
 #include <string>
 #include <vector>
 #include <map>
 #include <poll.h>
+#include <set>
+#include "Channel.hpp"
+#include "errors.hpp"
 
 class Client
 {
@@ -16,6 +18,7 @@ class Client
         std::string username;
         bool passOk;
         bool registered;
+        std::set<std::string> channels;
     public:
         Client();
 
@@ -38,10 +41,11 @@ class Client
         void appendToBuffer(const std::string& data);
         void appendToBuffer(const char* data, size_t len);
         void eraseFromBuffer(size_t pos, size_t len);
+        //Channel
+        void addChannel(std::string& channelName);
+        void removeChannel(std::string& channelName);
 
 };
 
 void removeClient(std::vector<pollfd>::iterator it, 
                 std::map<int, Client>& clients, std::vector<pollfd>& fds, std::map<std::string, int>& fdByNickUp);
-
-#endif

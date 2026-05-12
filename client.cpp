@@ -66,7 +66,13 @@ void removeClient(std::vector<pollfd>::iterator it,
     clients.erase(fd);    
     fds.erase(it);
 }
+void Client::addChannel(std::string& channelName) {
+    this->channels.insert(channelName);
+}
 
+void Client::removeChannel(std::string& channelName) {
+    this->channels.erase(channelName);
+}
 /*
 Iterator invalidation risk
 removeClient(it, clients, fds); erases from fds while iterating over it . 

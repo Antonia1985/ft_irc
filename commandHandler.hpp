@@ -3,10 +3,12 @@
 
 #include "parsedMessage.hpp"
 #include "client.hpp"
+#include "Channel.hpp"
 #include <map>
 
 int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, 
-                    std::map<std::string, int>& fdByNickUp, const std::string& serverPass);
+                    std::map<std::string, int>& fdByNickUp, const std::string& serverPass, std::map<std::string, Channel>& channels);
 void sendMsg(int clientFd, std::string msg);
+void handleJoin(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, Channel>& channels);
 
 #endif
