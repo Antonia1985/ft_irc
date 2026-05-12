@@ -209,12 +209,6 @@ static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client
         sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
         return;
     }
-    if(realName.find_first_of("\0\r\n") != std::string::npos)
-    {
-        
-    }
-
-
 }
 /*static void handleJoin(int fd, std::string args)
 {
@@ -356,6 +350,7 @@ USER <username> 0 * :<realname>
     NUL   '\0'
     CR    '\r'
     LF    '\n'
+    but they are already handled when the server stores the line into buffer
 -permissive logic:
  Everything from param[3] and after are part of real name
 -size: 50 chars are ok (IRC: 512  bytes for the entire irc line)
