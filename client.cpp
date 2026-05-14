@@ -5,8 +5,9 @@ Client::Client()
     : fd(-1),
       buffer(""),
       nickname(""),
-      nicknameToUp(""),
+      nicknameToUp(""),      
       username(""),
+      realname(""),
       passOk(false),
       registered(false)
 {
@@ -17,6 +18,7 @@ const std::string& Client::getBuffer() const { return buffer; }
 const std::string& Client::getNickname() const { return nickname; }
 const std::string& Client::getNicknameToUp() const { return nicknameToUp; }
 const std::string& Client::getUsername() const { return username; }
+const std::string& Client::getRealname() const { return realname; }
 bool Client::getPassOk() const { return passOk; }
 bool Client::getRegistered() const { return registered; }
 
@@ -25,6 +27,7 @@ void Client::setBuffer(const std::string& buf) { buffer = buf; }
 void Client::setNickname(const std::string& nicknm) { nickname = nicknm; }
 void Client::setNicknameToUp(const std::string& nicknmUp) { nicknameToUp = nicknmUp; }
 void Client::setUsername(const std::string& usernm) { username = usernm; }
+void Client::setRealname(const std::string& realnm) { realname = realnm; }
 void Client::setPassOk(bool p) { passOk = p; }
 void Client::setRegistered(bool r) { registered = r; }
 

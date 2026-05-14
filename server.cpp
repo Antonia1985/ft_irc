@@ -116,7 +116,8 @@ void createFdPollStrct(int serverFd, pollfd& serverStrctFd)
     serverStrctFd.revents = 0;
 }
  
-int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, std::map<std::string, int> fdByNickUp, const std::string& pass, std::map<std::string, Channel>& channels)
+int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clientsByFd, 
+            std::map<std::string, int>& fdByNickUp, const std::string& pass, std::map<std::string, Channel>& channels)
 {
     while(running)
     {
@@ -203,6 +204,7 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                     int fd = it->fd;
                     clientsByFd[fd].appendToBuffer(recvbuff, result); // append received data (may contain partial or multiple messages)
                     size_t nlPos = 0;
+                    bool clientRemoved = false;
                     while (1) // process all complete lines ending with '\n'
                     {
                         nlPos = clientsByFd[fd].getBuffer().find('\n', 0); //find position of first '\n' in the buffer (end of a complete IRC line)
@@ -220,7 +222,9 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             if (!handleCommand(fd, parsed, clientsByFd, fdByNickUp, pass, channels))
                             {
                                 std::cout << "Client disconnected!" << std::endl;
-                                removeClient(it, clientsByFd, fds, fdByNickUp); //!!!I get segmantation fault
+                                sendMsg(fd,  "ERROR :Closing Link");
+                                removeClient(it, clientsByFd, fds, fdByNickUp);
+                                clientRemoved = true;                                
                                 break;
                             }
 
@@ -230,6 +234,8 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             break;
                         }
                     }
+                    if (clientRemoved)
+                        break;
                 }
             }
         }

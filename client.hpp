@@ -16,6 +16,7 @@ class Client
         std::string nickname;
         std::string nicknameToUp;
         std::string username;
+        std::string realname;
         bool passOk;
         bool registered;
         std::set<std::string> channels;
@@ -27,6 +28,7 @@ class Client
         const std::string& getNickname() const;
         const std::string& getNicknameToUp() const;
         const std::string& getUsername() const;
+        const std::string& getRealname() const;
         bool getPassOk() const;
         bool getRegistered() const;
 
@@ -34,7 +36,8 @@ class Client
         void setBuffer(const std::string& buf);
         void setNickname(const std::string& nicknm);
         void setNicknameToUp(const std::string& nicknameToUp);
-        void setUsername(const std::string& usernm) ;
+        void setUsername(const std::string& usernm);
+        void setRealname(const std::string& realnm);
         void setPassOk(bool p);
         void setRegistered(bool r);
 
