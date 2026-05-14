@@ -12,14 +12,14 @@ void sendError(int clientFd, int error, ParsedMessage parsed, std::string nickna
     if (error == 401)
     {
         msg = std::string(":ircserv 401 ") 
-            + nickname + std::string(" ") + channel + std::string(" ") 
-            + std::string(":No such nick");
+            + nickname + std::string(" ") + channel
+            + std::string(" :No such nick");
     }
     else if (error == 403)
     {
         msg = std::string(":ircserv 403 ") 
-            + nickname + std::string(" ") + channel + std::string(" ") 
-            + std::string(":No such channel");
+            + nickname + std::string(" ") + channel
+            + std::string(" :No such channel");
     }
     else if (error == 421)
     {
@@ -76,12 +76,46 @@ void sendError(int clientFd, int error, ParsedMessage parsed, std::string nickna
     else 
     {
         msg = std::string(":ircserv unknown error");        
-    }  
-
+    }
     sendMsg(clientFd, msg);
 }
 
 
+void sendNotification(int clientFd, int notice, ParsedMessage parsed, std::string nickname, std::string channel)
+{
+    (void)parsed;
+    std::string msg;
+   
+    if (nickname.empty())
+        nickname = "*";
+
+    if (notice == 1)
+    {
+        msg = std::string(":ircserv 001 ") 
+            + nickname + std::string(" ") 
+            + std::string(" :Welcome to the IRC Network ")
+            + nickname;
+    }
+    else if (notice == 332)
+    {
+        msg = std::string(":ircserv 332 ") 
+            + nickname + std::string(" ") + channel 
+            + std::string(" :General discussion");
+    }
+    else if (notice == 353)
+    {
+        msg = std::string(":ircserv 353 ") 
+            + nickname + std::string(" = ") + channel + std::string(" ");
+            //+ here we add the channe members?????
+    }
+    else if (notice == 366)
+    {
+        msg = std::string(":ircserv 366 ") 
+            + nickname + std::string(" ") + channel
+            + std::string(" :End of /NAMES list");
+    }
+    sendMsg(clientFd, msg);
+}
 
 /*
 (!!! the * is basically: "nickname placeholder !!!)

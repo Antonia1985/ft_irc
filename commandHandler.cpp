@@ -58,6 +58,8 @@ static void handlePing(int fd, const ParsedMessage& parsed)
     sendMsg(fd, msg);
 }
 
+
+//PASS
 static int handlePass(int fd, const ParsedMessage& parsed, 
                         std::map<int, Client>& clientsByFd, const std::string& serverPass) //returns 0 when client must disconnect
 {
@@ -77,14 +79,22 @@ static int handlePass(int fd, const ParsedMessage& parsed,
     if(serverPass != parsed.params[0]) //if password doesn't match server's password (if extra args exist, they are ignored like real irc)
     {
         sendError(fd, 464, parsed, nickname, "");
-        std::cout << clientsByFd[fd].getPassOk() << std::endl; //testin the clientsByFd is filled
+        //std::cout << clientsByFd[fd].getPassOk() << std::endl; //testin the clientsByFd is filled
         return 0;
     }
     //success case
     client.setPassOk(true);
+    //set as registered if..
+    if(!client.getNickname().empty() && !client.getUsername().empty()) //if all 3 required fileds for registration are ok
+    {
+        client.setRegistered(true);
+        sendNotification(fd, 1 , parsed, nickname, "");
+    }
+
     return 1;
 }
 
+//NICK
 int validNick(const std::string& nick)
 {
     if (nick.empty())
@@ -108,6 +118,7 @@ int validNick(const std::string& nick)
 static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp)
 {
     std::string oldnickn = clientsByFd[fd].getNickname();//I take the nickname from clients, it's either existing or empty
+    
     if (parsed.params.empty()) //if empty must be the first to check eitherwise: toUpper(parsed.params[0]) will crash
     {
         sendError(fd, 431, parsed, oldnickn, "");
@@ -141,9 +152,17 @@ static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client
         fdByNickUp.erase(it);
     }    
     fdByNickUp[nickToUp] = fd; // and add in the map fdByNickUp the new nickname
-    //std::cout << clientsByFd[fd].getNicknameToUp() << std::endl; //testin the clientsByFd is filled 
+    //std::cout << clientsByFd[fd].getNicknameToUp() << std::endl; //testin the clientsByFd is filled
+
+    //set as registered if..
+    if(clientsByFd[fd].getPassOk() && ! clientsByFd[fd].getUsername().empty()) //if all 3 required fileds for registration are ok
+    {
+        clientsByFd[fd].setRegistered(true);
+        sendNotification(fd, 1 , parsed, parsed.params[0], "");
+    }
 }
 
+//USER
 static int validUser(int fd, const ParsedMessage& parsed)
 {
     (void)fd;
@@ -151,10 +170,8 @@ static int validUser(int fd, const ParsedMessage& parsed)
     for(size_t i = 0; i < user.size(); i++)
     {
         unsigned char c = static_cast<unsigned char>(user[i]);
-        if(std::isalnum(static_cast<unsigned char>(c))
-            || c == '_' || c == '-') 
-        {
-            
+        if(!std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') 
+        {            
             return 0;
         }
     }
@@ -170,6 +187,7 @@ std::string buildRealName(const ParsedMessage& parsed)
     }
     return realName;
 }
+
 static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd)
 {
     Client& client = clientsByFd[fd];
@@ -208,6 +226,14 @@ static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client
     {
         sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
         return;
+    }
+    clientsByFd[fd].setRealname(realName);
+
+    //set as registered if..
+    if(clientsByFd[fd].getPassOk() && !clientsByFd[fd].getNickname().empty()) //if all 3 required fileds for registration are ok
+    {
+        clientsByFd[fd].setRegistered(true);
+        sendNotification(fd, 1 , parsed, parsed.params[0], "");
     }
 }
 /*static void handleJoin(int fd, std::string args)
@@ -329,6 +355,7 @@ should not contain # , :
 ----------------------------------------------
 USER:
 USER <username> 0 * :<realname>
+fields 0 and * are mostly historical leftovers. IRC ignores params 1 and 2.
 
 <username>
 - required during registration
