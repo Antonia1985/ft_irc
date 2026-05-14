@@ -8,6 +8,27 @@
 #include <cctype>
 
 
+void sendMsg(int clientFd, std::string msg)
+{
+    std::string fullMsg = msg + "\r\n";
+    if (send(clientFd, fullMsg.c_str(), fullMsg.size(), 0) <= 0)
+    {
+        std::cerr << "send() failed!" << std::endl;
+    }
+}
+
+void sendToChannel(int senderFd, std::string msg, Channel& channel)
+{
+    const std::set<int>& channelUsers = channel.getUsers();
+    std::set<int>::const_iterator it;
+    for(it = channelUsers.begin(); it != channelUsers.end(); ++it)
+    {
+        if (*it == senderFd)
+            continue;
+        sendMsg(*it, msg);
+    }
+}
+
 void handleJoin(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, Channel>& channels) {
     if (parsed.params.empty())
     {
@@ -34,14 +55,7 @@ void handleJoin(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
     }
 }
 
-void sendMsg(int clientFd, std::string msg)
-{
-    std::string fullMsg = msg + "\r\n";
-    if (send(clientFd, fullMsg.c_str(), fullMsg.size(), 0) <= 0)
-    {
-        std::cerr << "send() failed!" << std::endl;
-    }
-}
+
 
 static void handlePing(int fd, const ParsedMessage& parsed)
 {
@@ -134,7 +148,7 @@ static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client
     }
 
     //check if nickname already exists    
-    if(fdByNickUp.find(nickToUp) != fdByNickUp.end()) 
+    if(fdByNickUp.find(nickToUp) != fdByNickUp.end())
     {
         sendError(fd, 433, parsed, oldnickn, "");
         return;
@@ -236,6 +250,69 @@ static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client
         sendNotification(fd, 1 , parsed, parsed.params[0], "");
     }
 }
+
+static void handlePrivmsg(int senderFd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, 
+                            std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels)
+{
+    std::string host = "localhost";
+    std::string senderNick = clientsByFd[senderFd].getNickname();
+    std::string receiver = "";
+
+    if(parsed.params.size() == 0) //if no arguments at all
+    {
+        sendError(senderFd, 461, parsed, senderNick, "");
+        return;
+    }
+
+    if(parsed.params.size() == 1) //if no message exists
+    {
+        sendError(senderFd, 412, parsed, senderNick, "");
+        return;
+    }
+
+    receiver = parsed.params[0];
+    if(receiver[0] == '#') //if it looks like a channel
+    {
+        if (channels.find(receiver) == channels.end()) // if the channel does not exist
+        {
+            sendError(senderFd, 403, parsed, senderNick, receiver);
+            return;
+        }
+
+        //if channel exists does the sender has access???
+        Channel& chan = channels[receiver];
+        if(chan.hasUser(senderFd)) //if the sender has access to channel
+        {
+            //success case
+            std::string msg = std::string(":") + senderNick + std::string("!") 
+                            + clientsByFd[senderFd].getUsername() + "@" +  host 
+                            + " PRIVMSG "+ receiver + std::string(" :") + parsed.params[1];
+            sendToChannel(senderFd, msg, chan);
+        }
+        else
+        {
+            sendError(senderFd, 442, parsed, senderNick, receiver);
+            return;
+        }
+        
+    }
+    else //it looks like a nickname
+    {
+        if(fdByNickUp.find(toUpper(receiver)) == fdByNickUp.end()) // if its not a nickname
+        {
+            sendError(senderFd, 401, parsed, senderNick, "");
+            return;
+        }
+        //success case
+        std::string nickUp = toUpper(receiver);
+        int receiverFd = fdByNickUp[nickUp];
+        std::string msg = std::string(":") + senderNick + std::string("!") 
+                        + clientsByFd[senderFd].getUsername() + "@" +  host 
+                        + " PRIVMSG "+ receiver + std::string(" :") + parsed.params[1];
+        sendMsg(receiverFd, msg);
+    }    
+}
+
 /*static void handleJoin(int fd, std::string args)
 {
 
@@ -246,10 +323,6 @@ static void handlePart(int fd, std::string args)
 
 }
 
-static void handlePrivmsg(int fd, std::string args)
-{
-
-}
 
 static void handleNotice(int fd, std::string args)
 {
@@ -277,7 +350,9 @@ static void handleMode(int fd, std::string args)
 }*/
 
 
-int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp, const std::string& serverPass, std::map<std::string, Channel>& channels)
+int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, 
+                std::map<std::string, int>& fdByNickUp, const std::string& serverPass, 
+                std::map<std::string, Channel>& channels)
 {
     if (parsed.command == "PING")
     {
@@ -293,13 +368,14 @@ int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsBy
             return 0;
     }
     else if (parsed.command == "USER")
-        handleUser(fd, parsed,clientsByFd);
+        handleUser(fd, parsed, clientsByFd);
+    else if (parsed.command == "PRIVMSG")
+        handlePrivmsg(fd, parsed, clientsByFd, fdByNickUp, channels);
     /*else if (command == "JOIN")
         handleJoin(fd, args);
     else if (command == "PART")
         handlePart(fd, args);
-    else if (command == "PRIVMSG")
-        handlePrivmsg(fd, args);
+    
     else if (command == "NOTICE")
         handleNotice(fd, args);
     else if (command == "KICK")
@@ -335,6 +411,7 @@ PRIVMSG #general :Hello!
 Server → Client:
 001 alice :Welcome to the IRC server
 
+
 -----------------------------------------------
 PASS:
 
@@ -344,6 +421,7 @@ Because PASS is usually treated as:
 authentication succeeded
 not as a continuously mutable state.
 
+
 ----------------------------------------------
 NICK:
 
@@ -351,6 +429,7 @@ must not be empty
 must not contain spaces
 should start with a letter
 should not contain # , :
+
 
 ----------------------------------------------
 USER:
@@ -381,4 +460,15 @@ fields 0 and * are mostly historical leftovers. IRC ignores params 1 and 2.
 -permissive logic:
  Everything from param[3] and after are part of real name
 -size: 50 chars are ok (IRC: 512  bytes for the entire irc line)
+
+
+----------------------------------------------
+PRIVMSG:
+PRIVMSG <target> :<message>
+-if no parameters -> error 461
+-if only 1 parameter -> error 412
+-if more parameters -> accept only the first 2 and ignore the rest
+-if target doesn't exist -> errors 401/403
+
+
 */
