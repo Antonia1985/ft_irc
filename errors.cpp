@@ -12,7 +12,7 @@ void sendError(int clientFd, int error, ParsedMessage parsed, std::string nickna
     if (error == 401)
     {
         msg = std::string(":ircserv 401 ") 
-            + nickname + std::string(" ") + channel
+            + nickname + std::string(" ") + parsed.params[0]
             + std::string(" :No such nick");
     }
     else if (error == 403)
@@ -20,6 +20,12 @@ void sendError(int clientFd, int error, ParsedMessage parsed, std::string nickna
         msg = std::string(":ircserv 403 ") 
             + nickname + std::string(" ") + channel
             + std::string(" :No such channel");
+    }
+    else if (error == 412)
+    {
+        msg = std::string(":ircserv 412 ") 
+            + nickname
+            + std::string(" :No text to send");
     }
     else if (error == 421)
     {
@@ -125,8 +131,10 @@ void sendNotification(int clientFd, int notice, ParsedMessage parsed, std::strin
 
 | Code  | Name                    | Meaning                      | Example reply                                           |
 | ----- | ----------------------- | ---------------------------- | ------------------------------------------------------- |
-| `401` | `ERR_NOSUCHNICK`        | No such nickname             | `:ircserv 401 George Bob :No such nick`         |
+| `401` | `ERR_NOSUCHNICK`        | No such nickname             | `:ircserv 401 George Bob :No such nick`                 |
 | `403` | `ERR_NOSUCHCHANNEL`     | Channel does not exist       | `:ircserv 403 George #test :No such channel`            |
+| `412` | `ERR_NOTEXTTOSEND`      | User tried to send PRIVMSG/  | `:ircserv 412 George :No text to send`                         |
+|                                 |  NOTICE without a messg body |                                                         |
 | `421` | `ERR_UNKNOWNCOMMAND`    | Unknown command              | `:ircserv 421 George ABC :Unknown command`              |
 | `431` | `ERR_NONICKNAMEGIVEN`   | Missing nickname             | `:ircserv 431 * :No nickname given`                     |
 | `432` | `ERR_ERRONEUSNICKNAME`  | Invalid nickname             | `:ircserv 432 * @@@ :Erroneous nickname`                |
