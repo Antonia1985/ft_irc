@@ -192,13 +192,13 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             continue;
                         }
                         std::cerr << "recv() failed!" << std::endl;
-                        removeClient(it, clientsByFd, fds, fdByNickUp);
+                        removeClient(it, clientsByFd, fds, fdByNickUp, channels);
                         break;
                     }
                     else if(result == 0)
                     {
                         std::cout << "Client disconnected!" << std::endl;
-                        removeClient(it, clientsByFd, fds, fdByNickUp);
+                        removeClient(it, clientsByFd, fds, fdByNickUp, channels);
                         break;
                     }
                     int fd = it->fd;
@@ -223,7 +223,7 @@ int pollLoop(int serverFd, std::vector<pollfd>& fds, std::map<int, Client>& clie
                             {
                                 std::cout << "Client disconnected!" << std::endl;
                                 sendMsg(fd,  "ERROR :Closing Link");
-                                removeClient(it, clientsByFd, fds, fdByNickUp);
+                                removeClient(it, clientsByFd, fds, fdByNickUp, channels);
                                 clientRemoved = true;                                
                                 break;
                             }

@@ -29,6 +29,7 @@ class Channel
         std::string modes;
         std::string key;
         int userLimit;
+        std::set<std::string> invitedUsers;
         
     public:
         Channel();
@@ -39,6 +40,10 @@ class Channel
         const std::set<int>& getUsers() const;
         bool isOperator(int fd) const;
         bool hasMode(char mode) const;
+        const std::string& getKey() const;
+        int getUserLimit() const;
+        std::string getModesString() const;
+        std::string getModesParamsString() const;
         // setters
         void setTopic(const std::string& t);
         void addMode(char mode);
@@ -51,5 +56,11 @@ class Channel
         void addOperator(int fd);
         void removeOperator(int fd);
         bool hasUser(int fd) const;
+
+        // invite logic
+        void inviteUser(const std::string& nickUp);
+        void uninviteUser(const std::string& nickUp);
+        bool isInvited(const std::string& nickUp) const;
+        void clearInvites();
 };
 
