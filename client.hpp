@@ -5,7 +5,7 @@
 #include <map>
 #include <poll.h>
 #include <set>
-#include "Channel.hpp"
+class Channel;
 #include "errors.hpp"
 
 class Client
@@ -47,8 +47,9 @@ class Client
         //Channel
         void addChannel(std::string& channelName);
         void removeChannel(std::string& channelName);
+        const std::set<std::string>& getChannels() const;
 
 };
 
 void removeClient(std::vector<pollfd>::iterator it, 
-                std::map<int, Client>& clients, std::vector<pollfd>& fds, std::map<std::string, int>& fdByNickUp);
+                std::map<int, Client>& clients, std::vector<pollfd>& fds, std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels);

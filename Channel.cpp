@@ -11,10 +11,12 @@
 /* ************************************************************************** */
 
 #include "Channel.hpp"
+#include <sstream>
 
 Channel::Channel() 
     : name(""), 
       topic(""), 
+      key(""),
       userLimit(-1)
 {
 }
@@ -84,9 +86,54 @@ void Channel::setUserLimit(int limit) {
 Channel::Channel(const std::string& n) 
     : name(n), 
       topic(""), 
+      key(""),
       userLimit(-1)
 {
 }
 void Channel::addUser(int fd) {
     this->users.insert(fd);
+}
+
+const std::string& Channel::getKey() const {
+    return key;
+}
+
+int Channel::getUserLimit() const {
+    return userLimit;
+}
+
+std::string Channel::getModesString() const {
+    return "+" + modes;
+}
+
+std::string Channel::getModesParamsString() const {
+    std::string params = "";
+    for (size_t i = 0; i < modes.length(); ++i) {
+        if (modes[i] == 'k') {
+            if (!params.empty()) params += " ";
+            params += key;
+        } else if (modes[i] == 'l') {
+            if (!params.empty()) params += " ";
+            std::stringstream ss;
+            ss << userLimit;
+            params += ss.str();
+        }
+    }
+    return params;
+}
+
+void Channel::inviteUser(const std::string& nickUp) {
+    invitedUsers.insert(nickUp);
+}
+
+void Channel::uninviteUser(const std::string& nickUp) {
+    invitedUsers.erase(nickUp);
+}
+
+bool Channel::isInvited(const std::string& nickUp) const {
+    return invitedUsers.find(nickUp) != invitedUsers.end();
+}
+
+void Channel::clearInvites() {
+    invitedUsers.clear();
 }

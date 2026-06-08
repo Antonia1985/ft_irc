@@ -1,5 +1,6 @@
 #include "client.hpp"
 #include <unistd.h>
+#include "commandHandler.hpp"
 
 Client::Client()
     : fd(-1),
@@ -58,11 +59,44 @@ void removeFromfdByNickUp(std::map<std::string, int>& fdByNickUp, std::string ni
 }
 
 void removeClient(std::vector<pollfd>::iterator it, 
-                std::map<int, Client>& clients, std::vector<pollfd>& fds, std::map<std::string, int>& fdByNickUp)
+                std::map<int, Client>& clients, std::vector<pollfd>& fds, std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels)
 {
 
     int fd = it->fd;
+    std::string nick = clients[fd].getNickname();
+    std::string user = clients[fd].getUsername();
+    if (user.empty())
+        user = "unknown";
     std::string nickUp = clients[fd].getNicknameToUp();
+    const std::set<std::string>& joinedChans = clients[fd].getChannels();
+
+    std::string quitMsg = ":" + nick + "!" + user + "@localhost QUIT :Disconnected";
+
+    // remove client from channels they are in
+    for (std::set<std::string>::const_iterator cit = joinedChans.begin(); cit != joinedChans.end(); ++cit)
+    {
+        std::map<std::string, Channel>::iterator chanIt = channels.find(*cit);
+        if (chanIt != channels.end())
+        {
+            Channel& channel = chanIt->second;
+            const std::set<int>& users = channel.getUsers();
+            for (std::set<int>::const_iterator uIt = users.begin(); uIt != users.end(); ++uIt)
+            {
+                if (*uIt != fd)
+                {
+                    sendMsg(*uIt, quitMsg);
+                }
+            }
+            channel.removeUser(fd);
+            channel.removeOperator(fd);
+            
+            // remove channel if empty
+            if (channel.getUsers().empty())
+            {
+                channels.erase(chanIt);
+            }
+        }
+    }
 
     close(fd);
     removeFromfdByNickUp(fdByNickUp, nickUp);
@@ -75,6 +109,10 @@ void Client::addChannel(std::string& channelName) {
 
 void Client::removeChannel(std::string& channelName) {
     this->channels.erase(channelName);
+}
+
+const std::set<std::string>& Client::getChannels() const {
+    return channels;
 }
 /*
 Iterator invalidation risk

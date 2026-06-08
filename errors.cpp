@@ -79,6 +79,32 @@ void sendError(int clientFd, int error, ParsedMessage parsed, std::string nickna
     {
         msg = std::string(":ircserv 464 ") + nickname + std::string(" :Password incorrect");        
     }
+    else if (error == 441)
+    {
+        std::string target = (parsed.params.size() > 1) ? parsed.params[1] : (parsed.params.size() > 0 ? parsed.params[0] : "user");
+        msg = std::string(":ircserv 441 ") + nickname + " " + target + " " + channel + " :They aren't on that channel";
+    }
+    else if (error == 443)
+    {
+        std::string target = (parsed.params.size() > 0) ? parsed.params[0] : "user";
+        msg = std::string(":ircserv 443 ") + nickname + " " + target + " " + channel + " :is already on channel";
+    }
+    else if (error == 471)
+    {
+        msg = std::string(":ircserv 471 ") + nickname + " " + channel + " :Cannot join channel (+l)";
+    }
+    else if (error == 473)
+    {
+        msg = std::string(":ircserv 473 ") + nickname + " " + channel + " :Cannot join channel (+i)";
+    }
+    else if (error == 475)
+    {
+        msg = std::string(":ircserv 475 ") + nickname + " " + channel + " :Cannot join channel (+k)";
+    }
+    else if (error == 482)
+    {
+        msg = std::string(":ircserv 482 ") + nickname + " " + channel + " :You're not channel operator";
+    }
     else 
     {
         msg = std::string(":ircserv unknown error");        
@@ -89,7 +115,6 @@ void sendError(int clientFd, int error, ParsedMessage parsed, std::string nickna
 
 void sendNotification(int clientFd, int notice, ParsedMessage parsed, std::string nickname, std::string channel)
 {
-    (void)parsed;
     std::string msg;
    
     if (nickname.empty())
@@ -102,17 +127,32 @@ void sendNotification(int clientFd, int notice, ParsedMessage parsed, std::strin
             + std::string(" :Welcome to the IRC Network ")
             + nickname;
     }
+    else if (notice == 324)
+    {
+        std::string modes = (parsed.params.size() > 0) ? parsed.params[0] : "";
+        std::string params = (parsed.params.size() > 1) ? parsed.params[1] : "";
+        msg = std::string(":ircserv 324 ") + nickname + " " + channel + " " + modes;
+        if (!params.empty())
+            msg += " " + params;
+    }
+    else if (notice == 331)
+    {
+        msg = std::string(":ircserv 331 ") + nickname + " " + channel + " :No topic is set";
+    }
     else if (notice == 332)
     {
-        msg = std::string(":ircserv 332 ") 
-            + nickname + std::string(" ") + channel 
-            + std::string(" :General discussion");
+        std::string topic = (parsed.params.size() > 0) ? parsed.params[0] : "General discussion";
+        msg = std::string(":ircserv 332 ") + nickname + " " + channel + " :" + topic;
+    }
+    else if (notice == 341)
+    {
+        std::string target = (parsed.params.size() > 0) ? parsed.params[0] : "";
+        msg = std::string(":ircserv 341 ") + nickname + " " + target + " " + channel;
     }
     else if (notice == 353)
     {
-        msg = std::string(":ircserv 353 ") 
-            + nickname + std::string(" = ") + channel + std::string(" ");
-            //+ here we add the channe members?????
+        std::string userList = (parsed.params.size() > 0) ? parsed.params[0] : "";
+        msg = std::string(":ircserv 353 ") + nickname + " = " + channel + " :" + userList;
     }
     else if (notice == 366)
     {
