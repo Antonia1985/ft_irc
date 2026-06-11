@@ -2,6 +2,7 @@
 #include "Channel.hpp"
 #include "parser.hpp"
 #include "errors.hpp"
+#include "server.hpp"
 #include <iostream>
 #include <sys/socket.h>
 #include <string>
@@ -10,14 +11,15 @@
 #include <vector>
 #include <cstdlib>
 
+// Defined in server.cpp; gives access to Server::prepare_send() without
+// passing the Server instance through every command handler call.
+extern Server* g_server;
 
 void sendMsg(int clientFd, std::string msg)
 {
     std::string fullMsg = msg + "\r\n";
-    if (send(clientFd, fullMsg.c_str(), fullMsg.size(), 0) <= 0)
-    {
-        std::cerr << "send() failed!" << std::endl;
-    }
+    if (g_server)
+        g_server->prepare_send(clientFd, fullMsg);
 }
 
 void sendToChannel(int senderFd, std::string msg, Channel& channel)
