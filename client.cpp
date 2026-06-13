@@ -120,4 +120,3 @@ removeClient(it, clients, fds); erases from fds while iterating over it .
 Your break avoids some damage, but it is fragile. 
 Better make removeClient return the next iterator later.
 */
-

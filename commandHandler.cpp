@@ -2,6 +2,7 @@
 #include "Channel.hpp"
 #include "parser.hpp"
 #include "errors.hpp"
+#include "server.hpp"
 #include <iostream>
 #include <sys/socket.h>
 #include <string>
@@ -10,14 +11,47 @@
 #include <vector>
 #include <cstdlib>
 
+void debugPrintClients(const std::map<int, Client>& clientsByFd)
+{
+    std::map<int, Client>::const_iterator it;
+
+    std::cout << "\n========== CLIENTS DEBUG ==========" << std::endl;
+
+    if (clientsByFd.empty())
+    {
+        std::cout << "No clients connected." << std::endl;
+        std::cout << "===================================\n" << std::endl;
+        return;
+    }
+
+    for (it = clientsByFd.begin(); it != clientsByFd.end(); ++it)
+    {
+        const int fd = it->first;
+        const Client& client = it->second;
+
+        std::cout << "fd: " << fd << std::endl;
+        std::cout << "nickname: [" << client.getNickname() << "]" << std::endl;
+        std::cout << "username: [" << client.getUsername() << "]" << std::endl;
+        std::cout << "realname: [" << client.getRealname() << "]" << std::endl;
+        std::cout << "passOk: " << client.getPassOk() << std::endl;
+        std::cout << "registered: " << client.getRegistered() << std::endl;
+        std::cout << "-----------------------------------" << std::endl;
+    }
+
+    std::cout << "===================================\n" << std::endl;
+}
+
+
+
+// Defined in server.cpp; gives access to Server::prepare_send() without
+// passing the Server instance through every command handler call.
+extern Server* g_server;
 
 void sendMsg(int clientFd, std::string msg)
 {
     std::string fullMsg = msg + "\r\n";
-    if (send(clientFd, fullMsg.c_str(), fullMsg.size(), 0) <= 0)
-    {
-        std::cerr << "send() failed!" << std::endl;
-    }
+    if (g_server)
+        g_server->prepare_send(clientFd, fullMsg);
 }
 
 void sendToChannel(int senderFd, std::string msg, Channel& channel)
@@ -52,6 +86,275 @@ static void broadcastToChannel(const std::string& msg, Channel& channel)
         sendMsg(*it, msg);
     }
 }
+
+
+
+//PING
+static void handlePing(int fd, const ParsedMessage& parsed)
+{
+    std::string msg;
+    if(!parsed.params.empty())
+    {        
+        if((parsed.lastParamTrailing == true) && (parsed.params.size() == 1))
+            msg = std::string("PONG :") + parsed.params[0];
+        else
+            msg = std::string("PONG ") + parsed.params[0];
+    }        
+    else
+        msg = "PONG";
+    sendMsg(fd, msg);
+}
+
+//PASS
+static int handlePass(int fd, const ParsedMessage& parsed, 
+                        std::map<int, Client>& clientsByFd, const std::string& serverPass) //returns 0 when client must disconnect
+{
+    Client& client = clientsByFd[fd];
+    std::string nickname = client.getNickname();   
+
+    if(client.getRegistered() == true)  //if already registered
+    {
+        sendError(fd, 462, parsed, nickname, "");
+        return 1;
+    }
+    if(parsed.params.size() == 0) //if no arguments
+    {
+        sendError(fd, 461, parsed, nickname, "");
+        return 1;
+    }
+    if(serverPass != parsed.params[0]) //if password doesn't match server's password (if extra args exist, they are ignored like real irc)
+    {
+        sendError(fd, 464, parsed, nickname, "");
+        //std::cout << clientsByFd[fd].getPassOk() << std::endl; //testin the clientsByFd is filled
+        return 0;
+    }
+    //success case
+    client.setPassOk(true);
+    //set as registered if..
+    if(!client.getNickname().empty() && !client.getUsername().empty()) //if all 3 required fileds for registration are ok
+    {
+        client.setRegistered(true);
+        sendNotification(fd, 1 , parsed, nickname, "");
+    }
+
+    return 1;
+}
+
+//NICK
+int validNick(const std::string& nick)
+{
+    if (nick.empty())
+        return 2;
+
+    if (!std::isalpha(nick[0]))
+        return 3;
+
+    for (size_t i = 0; i < nick.size(); i++)
+    {
+        if (nick[i] == ' ' || nick[i] == '#' ||
+            nick[i] == ':' || nick[i] == ',')
+            return 3;
+    }
+    if (nick.size() >9)
+        return 3;
+
+    return 1;
+}
+
+static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp)
+{
+    Client& client = clientsByFd[fd];
+    std::string oldnickn = client.getNickname();
+    
+    //if empty must be the first to check eitherwise: toUpper(parsed.params[0]) will crash
+    if (parsed.params.empty()) 
+    {
+        sendError(fd, 431, parsed, oldnickn, "");
+        return;
+    }
+    std::string nickToUp = toUpper(parsed.params[0]);
+
+    //check if nickname after command is erroneus
+    if(validNick(parsed.params[0]) == 3) 
+    {
+        sendError(fd, 432, parsed, oldnickn, "");
+        return;
+    }
+
+    //check if nickname already exists    
+    if(fdByNickUp.find(nickToUp) != fdByNickUp.end())
+    {
+        sendError(fd, 433, parsed, oldnickn, "");
+        return;
+    }
+
+    //success case:
+    clientsByFd[fd].setNickname(parsed.params[0]);
+    clientsByFd[fd].setNicknameToUp(nickToUp);
+
+    //search if oldnickname exists in fdByNickUp, if yes erase it
+    std::map<std::string, int>::iterator it;
+    it = fdByNickUp.find(toUpper(oldnickn));
+    if (it != fdByNickUp.end())
+    {
+        fdByNickUp.erase(it);
+    }
+    fdByNickUp[nickToUp] = fd; // and add in the map fdByNickUp the new nickname
+    //std::cout << clientsByFd[fd].getNicknameToUp() << std::endl; //testin the clientsByFd is filled
+
+    // if already registerd but changed the nickname
+    if(clientsByFd[fd].getRegistered())
+    {
+        std::string msg = ":" + oldnickn + "!" + clientsByFd[fd].getUsername() + "@localhost NICK :" + parsed.params[0];
+        sendMsg(fd, msg);
+    }
+    //set as registered if..
+    if(clientsByFd[fd].getPassOk() && ! clientsByFd[fd].getUsername().empty() && !clientsByFd[fd].getRegistered()) //if all 3 required fileds for registration are ok
+    {
+        clientsByFd[fd].setRegistered(true);
+        sendNotification(fd, 1 , parsed, parsed.params[0], "");
+    }
+}
+
+//USER
+static int validUser(int fd, const ParsedMessage& parsed)
+{
+    (void)fd;
+    std::string user = parsed.params[0];
+    for(size_t i = 0; i < user.size(); i++)
+    {
+        unsigned char c = static_cast<unsigned char>(user[i]);
+        if(!std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') 
+        {            
+            return 0;
+        }
+    }
+    return 1;
+}
+
+std::string buildRealName(const ParsedMessage& parsed)
+{
+    std::string realName = parsed.params[3];
+    for(size_t i = 4; i < parsed.params.size(); i++)
+    {
+        realName += std::string(" ") + parsed.params[i];
+    }
+    return realName;
+}
+
+static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd)
+{
+    Client& client = clientsByFd[fd];
+    std::string nickname = client.getNickname();   
+
+    // handling <username>
+    if(parsed.params.size() < 4) //if less arguments
+    {
+        sendError(fd, 461, parsed, nickname, "");
+        return;
+    }
+    if(client.getRegistered() == true)  //if already registered: do not let USER change after registration
+    {
+        sendError(fd, 462, parsed, nickname, "");
+        return;
+    }
+    if(!validUser(fd, parsed)) //if username has an invalid char
+    {
+        sendMsg(fd, "ERROR :Invalid username (must contain only letters/numbers)");
+    }
+    if(parsed.params[0].size() > 10) //if username is big
+    {
+        sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
+        return;
+    }
+    //success case
+    clientsByFd[fd].setUsername(parsed.params[0]);
+
+    // handling <realname>
+    std::string realName;
+    if (parsed.params.size() > 3) // if more than 4 params then built the real name appending the last params
+    {
+        realName = buildRealName(parsed);
+    }
+    if (realName.size() > 50)//if real name is big
+    {
+        sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
+        return;
+    }
+    clientsByFd[fd].setRealname(realName);
+
+    //set as registered if..
+    if(clientsByFd[fd].getPassOk() && !clientsByFd[fd].getNickname().empty()) //if all 3 required fileds for registration are ok
+    {
+        clientsByFd[fd].setRegistered(true);
+        sendNotification(fd, 1 , parsed, parsed.params[0], "");
+    }
+}
+
+//PRIVMSG
+static void handlePrivmsg(int senderFd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, 
+                            std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels)
+{
+    std::string host = "localhost";
+    std::string senderNick = clientsByFd[senderFd].getNickname();
+    std::string receiver = "";
+
+    if(parsed.params.size() == 0) //if no arguments at all
+    {
+        sendError(senderFd, 461, parsed, senderNick, "");
+        return;
+    }
+
+    if(parsed.params.size() == 1) //if no message exists
+    {
+        sendError(senderFd, 412, parsed, senderNick, "");
+        return;
+    }
+
+    receiver = parsed.params[0];
+    if(receiver[0] == '#') //if it looks like a channel
+    {
+        if (channels.find(receiver) == channels.end()) // if the channel does not exist
+        {
+            sendError(senderFd, 403, parsed, senderNick, receiver);
+            return;
+        }
+
+        //if channel exists does the sender has access???
+        Channel& chan = channels[receiver];
+        if(chan.hasUser(senderFd)) //if the sender has access to channel
+        {
+            //success case
+            std::string msg = std::string(":") + senderNick + std::string("!") 
+                            + clientsByFd[senderFd].getUsername() + "@" +  host 
+                            + " PRIVMSG "+ receiver + std::string(" :") + parsed.params[1];
+            sendToChannel(senderFd, msg, chan);
+        }
+        else
+        {
+            sendError(senderFd, 442, parsed, senderNick, receiver);
+            return;
+        }
+        
+    }
+    else //it looks like a nickname
+    {
+        if(fdByNickUp.find(toUpper(receiver)) == fdByNickUp.end()) // if its not a nickname
+        {
+            sendError(senderFd, 401, parsed, senderNick, "");
+            return;
+        }
+        //success case
+        std::string nickUp = toUpper(receiver);
+        int receiverFd = fdByNickUp[nickUp];
+        std::string msg = std::string(":") + senderNick + std::string("!") 
+                        + clientsByFd[senderFd].getUsername() + "@" +  host 
+                        + " PRIVMSG "+ receiver + std::string(" :") + parsed.params[1];
+        sendMsg(receiverFd, msg);
+    }    
+}
+
+
 
 void handleJoin(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, Channel>& channels)
 {
@@ -162,277 +465,6 @@ void handleJoin(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
         sendNotification(fd, 353, pNotice, nick, channelName);
         sendNotification(fd, 366, pNotice, nick, channelName);
     }
-}
-
-
-
-static void handlePing(int fd, const ParsedMessage& parsed)
-{
-    std::string msg;
-    if(!parsed.params.empty())
-    {        
-        if((parsed.lastParamTrailing == true) && (parsed.params.size() == 1))
-            msg = std::string("PONG :") + parsed.params[0];
-        else
-            msg = std::string("PONG ") + parsed.params[0];
-    }        
-    else
-        msg = "PONG";
-    sendMsg(fd, msg);
-}
-
-
-//PASS
-static int handlePass(int fd, const ParsedMessage& parsed, 
-                        std::map<int, Client>& clientsByFd, const std::string& serverPass) //returns 0 when client must disconnect
-{
-    Client& client = clientsByFd[fd];
-    std::string nickname = client.getNickname();   
-
-    if(client.getRegistered() == true)  //if already registered
-    {
-        sendError(fd, 462, parsed, nickname, "");
-        return 1;
-    }
-    if(parsed.params.size() == 0) //if no arguments
-    {
-        sendError(fd, 461, parsed, nickname, "");
-        return 1;
-    }
-    if(serverPass != parsed.params[0]) //if password doesn't match server's password (if extra args exist, they are ignored like real irc)
-    {
-        sendError(fd, 464, parsed, nickname, "");
-        //std::cout << clientsByFd[fd].getPassOk() << std::endl; //testin the clientsByFd is filled
-        return 0;
-    }
-    //success case
-    client.setPassOk(true);
-    //set as registered if..
-    if(!client.getNickname().empty() && !client.getUsername().empty()) //if all 3 required fileds for registration are ok
-    {
-        client.setRegistered(true);
-        sendNotification(fd, 1 , parsed, nickname, "");
-    }
-
-    return 1;
-}
-
-//NICK
-int validNick(const std::string& nick)
-{
-    if (nick.empty())
-        return 2;
-
-    if (!std::isalpha(nick[0]))
-        return 3;
-
-    for (size_t i = 0; i < nick.size(); i++)
-    {
-        if (nick[i] == ' ' || nick[i] == '#' ||
-            nick[i] == ':' || nick[i] == ',')
-            return 3;
-    }
-    if (nick.size() >9)
-        return 3;
-
-    return 1;
-}
-
-static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp)
-{
-    Client& client = clientsByFd[fd];
-    std::string oldnickn = client.getNickname();
-    
-    if (!client.getPassOk())
-    {
-        sendError(fd, 451, parsed, oldnickn, "");
-        return;
-    }
-
-    if (parsed.params.empty()) //if empty must be the first to check eitherwise: toUpper(parsed.params[0]) will crash
-    {
-        sendError(fd, 431, parsed, oldnickn, "");
-        return;
-    }
-    std::string nickToUp = toUpper(parsed.params[0]);
-
-    //check if nickname after command is erroneus
-    if(validNick(parsed.params[0]) == 3) 
-    {
-        sendError(fd, 432, parsed, oldnickn, "");
-        return;
-    }
-
-    //check if nickname already exists    
-    if(fdByNickUp.find(nickToUp) != fdByNickUp.end())
-    {
-        sendError(fd, 433, parsed, oldnickn, "");
-        return;
-    }
-
-    //success case:
-    clientsByFd[fd].setNickname(parsed.params[0]);
-    clientsByFd[fd].setNicknameToUp(nickToUp);
-
-    //search if oldnickname exists in fdByNickUp, if yes erase it
-    std::map<std::string, int>::iterator it;
-    it = fdByNickUp.find(toUpper(oldnickn));
-    if (it != fdByNickUp.end())
-    {
-        fdByNickUp.erase(it);
-    }    
-    fdByNickUp[nickToUp] = fd; // and add in the map fdByNickUp the new nickname
-    //std::cout << clientsByFd[fd].getNicknameToUp() << std::endl; //testin the clientsByFd is filled
-
-    //set as registered if..
-    if(clientsByFd[fd].getPassOk() && ! clientsByFd[fd].getUsername().empty()) //if all 3 required fileds for registration are ok
-    {
-        clientsByFd[fd].setRegistered(true);
-        sendNotification(fd, 1 , parsed, parsed.params[0], "");
-    }
-}
-
-//USER
-static int validUser(int fd, const ParsedMessage& parsed)
-{
-    (void)fd;
-    std::string user = parsed.params[0];
-    for(size_t i = 0; i < user.size(); i++)
-    {
-        unsigned char c = static_cast<unsigned char>(user[i]);
-        if(!std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') 
-        {            
-            return 0;
-        }
-    }
-    return 1;
-}
-
-std::string buildRealName(const ParsedMessage& parsed)
-{
-    std::string realName = parsed.params[3];
-    for(size_t i = 4; i < parsed.params.size(); i++)
-    {
-        realName += std::string(" ") + parsed.params[i];
-    }
-    return realName;
-}
-
-static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd)
-{
-    Client& client = clientsByFd[fd];
-    std::string nickname = client.getNickname();   
-
-    if (!client.getPassOk())
-    {
-        sendError(fd, 451, parsed, nickname, "");
-        return;
-    }
-
-    // handling <username>
-    if(parsed.params.size() < 4) //if less arguments
-    {
-        sendError(fd, 461, parsed, nickname, "");
-        return;
-    }
-    if(client.getRegistered() == true)  //if already registered: do not let USER change after registration
-    {
-        sendError(fd, 462, parsed, nickname, "");
-        return;
-    }
-    if(!validUser(fd, parsed)) //if username has an invalid char
-    {
-        sendMsg(fd, "ERROR :Invalid username (must contain only letters/numbers)");
-    }
-    if(parsed.params[0].size() > 10) //if username is big
-    {
-        sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
-        return;
-    }
-    //success case
-    clientsByFd[fd].setUsername(parsed.params[0]);
-
-    // handling <realname>
-    std::string realName;
-    if (parsed.params.size() > 3) // if more than 4 params then built the real name appending the last params
-    {
-        realName = buildRealName(parsed);
-    }
-    if (realName.size() > 50)//if real name is big
-    {
-        sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
-        return;
-    }
-    clientsByFd[fd].setRealname(realName);
-
-    //set as registered if..
-    if(clientsByFd[fd].getPassOk() && !clientsByFd[fd].getNickname().empty()) //if all 3 required fileds for registration are ok
-    {
-        clientsByFd[fd].setRegistered(true);
-        sendNotification(fd, 1 , parsed, parsed.params[0], "");
-    }
-}
-
-static void handlePrivmsg(int senderFd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, 
-                            std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels)
-{
-    std::string host = "localhost";
-    std::string senderNick = clientsByFd[senderFd].getNickname();
-    std::string receiver = "";
-
-    if(parsed.params.size() == 0) //if no arguments at all
-    {
-        sendError(senderFd, 461, parsed, senderNick, "");
-        return;
-    }
-
-    if(parsed.params.size() == 1) //if no message exists
-    {
-        sendError(senderFd, 412, parsed, senderNick, "");
-        return;
-    }
-
-    receiver = parsed.params[0];
-    if(receiver[0] == '#') //if it looks like a channel
-    {
-        if (channels.find(receiver) == channels.end()) // if the channel does not exist
-        {
-            sendError(senderFd, 403, parsed, senderNick, receiver);
-            return;
-        }
-
-        //if channel exists does the sender has access???
-        Channel& chan = channels[receiver];
-        if(chan.hasUser(senderFd)) //if the sender has access to channel
-        {
-            //success case
-            std::string msg = std::string(":") + senderNick + std::string("!") 
-                            + clientsByFd[senderFd].getUsername() + "@" +  host 
-                            + " PRIVMSG "+ receiver + std::string(" :") + parsed.params[1];
-            sendToChannel(senderFd, msg, chan);
-        }
-        else
-        {
-            sendError(senderFd, 442, parsed, senderNick, receiver);
-            return;
-        }
-        
-    }
-    else //it looks like a nickname
-    {
-        if(fdByNickUp.find(toUpper(receiver)) == fdByNickUp.end()) // if its not a nickname
-        {
-            sendError(senderFd, 401, parsed, senderNick, "");
-            return;
-        }
-        //success case
-        std::string nickUp = toUpper(receiver);
-        int receiverFd = fdByNickUp[nickUp];
-        std::string msg = std::string(":") + senderNick + std::string("!") 
-                        + clientsByFd[senderFd].getUsername() + "@" +  host 
-                        + " PRIVMSG "+ receiver + std::string(" :") + parsed.params[1];
-        sendMsg(receiverFd, msg);
-    }    
 }
 
 void handleCap(int fd, const ParsedMessage& parsed)
@@ -1030,22 +1062,38 @@ void handleNotice(int senderFd, const ParsedMessage& parsed, std::map<int, Clien
 }
 
 
+static bool isKnownCommand(const std::string& cmd)
+{
+    return cmd == "PASS" || cmd == "NICK" || cmd == "USER" ||
+           cmd == "CAP" || cmd == "PING" || cmd == "QUIT" ||
+           cmd == "PRIVMSG" || cmd == "JOIN" || cmd == "PART" ||
+           cmd == "KICK" || cmd == "INVITE" || cmd == "TOPIC" ||
+           cmd == "MODE" || cmd == "NOTICE";
+}
+
+static bool isAllowedBeforeRegistration(const std::string& cmd)
+{
+    return cmd == "PASS" || cmd == "NICK" || cmd == "USER" ||
+           cmd == "CAP" || cmd == "PING" || cmd == "QUIT";
+}
+
 int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, 
                 std::map<std::string, int>& fdByNickUp, const std::string& serverPass, 
                 std::map<std::string, Channel>& channels)
 {
     Client& client = clientsByFd[fd];
 
-    // Registration guard
-    if (!client.getRegistered() && 
-        parsed.command != "PASS" && parsed.command != "NICK" && 
-        parsed.command != "USER" && parsed.command != "CAP" && 
-        parsed.command != "QUIT")
+    if (!isKnownCommand(parsed.command))
+    {
+        sendError(fd, 421, parsed, client.getNickname(), "");
+        return 1;
+    }
+
+    if (!client.getRegistered() && !isAllowedBeforeRegistration(parsed.command))
     {
         sendError(fd, 451, parsed, client.getNickname(), "");
         return 1;
     }
-
     if (parsed.command == "PING")
     {
         handlePing(fd, parsed);
@@ -1053,18 +1101,21 @@ int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsBy
     else if (parsed.command == "NICK")
     {
         handleNick(fd, parsed, clientsByFd, fdByNickUp);
+        debugPrintClients(clientsByFd);
     }        
     else if (parsed.command == "PASS")
     {
         if(!handlePass(fd, parsed, clientsByFd, serverPass))
             return 0;
+        debugPrintClients(clientsByFd);
     }
     else if (parsed.command == "USER")
     {
         handleUser(fd, parsed, clientsByFd);
+        debugPrintClients(clientsByFd);
     }
     else if (parsed.command == "CAP")
-    {
+    {        
         handleCap(fd, parsed);
     }
     else if (parsed.command == "PRIVMSG")
@@ -1103,10 +1154,7 @@ int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsBy
     {
         handleNotice(fd, parsed, clientsByFd, fdByNickUp, channels);
     }
-    else
-    {
-        sendError(fd, 421, parsed, client.getNickname(), "");
-    }
+   
     return 1;
 }
 
@@ -1126,9 +1174,13 @@ Server → Client:
 001 alice :Welcome to the IRC server
 
 
+GENERAL RULES
+If new client types anything different before  
+I should accept USER and NICK before PASS but I won't register before all 3 are valid
 -----------------------------------------------
 PASS:
 
+if not registered and pass is wrong then: error 464 and close link
 once correct PASS received → passOk = true
 later wrong PASS does NOT unset it
 Because PASS is usually treated as:
@@ -1143,7 +1195,7 @@ must not be empty
 must not contain spaces
 should start with a letter
 should not contain # , :
-
+it ignores extra params, keeps the 1st param only as nickname
 
 ----------------------------------------------
 USER:
@@ -1186,3 +1238,9 @@ PRIVMSG <target> :<message>
 
 
 */
+
+
+// gdb ./ircserv
+// break handleNick
+// run 6667 pass
+//
