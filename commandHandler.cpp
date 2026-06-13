@@ -11,7 +11,7 @@
 #include <vector>
 #include <cstdlib>
 
-void debugPrintClients(const std::map<int, Client>& clientsByFd)
+/*void debugPrintClients(const std::map<int, Client>& clientsByFd)
 {
     std::map<int, Client>::const_iterator it;
 
@@ -39,7 +39,7 @@ void debugPrintClients(const std::map<int, Client>& clientsByFd)
     }
 
     std::cout << "===================================\n" << std::endl;
-}
+}*/
 
 
 
@@ -1101,18 +1101,18 @@ int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsBy
     else if (parsed.command == "NICK")
     {
         handleNick(fd, parsed, clientsByFd, fdByNickUp);
-        debugPrintClients(clientsByFd);
+        //debugPrintClients(clientsByFd);
     }        
     else if (parsed.command == "PASS")
     {
         if(!handlePass(fd, parsed, clientsByFd, serverPass))
             return 0;
-        debugPrintClients(clientsByFd);
+        //debugPrintClients(clientsByFd);
     }
     else if (parsed.command == "USER")
     {
         handleUser(fd, parsed, clientsByFd);
-        debugPrintClients(clientsByFd);
+        //debugPrintClients(clientsByFd);
     }
     else if (parsed.command == "CAP")
     {        
