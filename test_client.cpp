@@ -3,7 +3,7 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <poll.h>
-
+#include <stdio.h>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -141,7 +141,7 @@ int main(int argc, char **argv)
 
             buffer[bytes] = '\0';
 
-            std::cout << "\33[2K\rSERVER: " << buffer << std::flush;
+            std::cout << "\33[2K\rSERVER > " << buffer << std::flush;
 
             need_prompt = true;
         }
