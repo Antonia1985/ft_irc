@@ -122,10 +122,11 @@ void sendNotification(int clientFd, int notice, ParsedMessage parsed, std::strin
 
     if (notice == 1)
     {
-        msg = std::string(":ircserv 001 ") 
-            + nickname + std::string(" ") 
-            + std::string(" :Welcome to the IRC Network ")
-            + nickname;
+        sendMsg(clientFd, std::string(":ircserv 001 ") + nickname + " :Welcome to the IRC Network " + nickname);
+        sendMsg(clientFd, std::string(":ircserv 002 ") + nickname + " :Your host is ircserv, running version 1.0");
+        sendMsg(clientFd, std::string(":ircserv 003 ") + nickname + " :This server is running ft_irc");
+        sendMsg(clientFd, std::string(":ircserv 004 ") + nickname + " ircserv 1.0 o itkol");
+        return;
     }
     else if (notice == 324)
     {

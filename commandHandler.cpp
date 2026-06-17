@@ -9,6 +9,7 @@
 #include <cctype>
 #include <sstream>
 #include <vector>
+#include <set>
 #include <cstdlib>
 
 // Defined in server.cpp; gives access to Server::prepare_send() without
@@ -240,57 +241,81 @@ int validNick(const std::string& nick)
     return 1;
 }
 
-static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, int>& fdByNickUp)
+static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd,
+                        std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels)
 {
     Client& client = clientsByFd[fd];
     std::string oldnickn = client.getNickname();
-    
+
     if (!client.getPassOk())
     {
         sendError(fd, 451, parsed, oldnickn, "");
         return;
     }
 
-    if (parsed.params.empty()) //if empty must be the first to check eitherwise: toUpper(parsed.params[0]) will crash
+    if (parsed.params.empty()) //must be checked first, otherwise toUpper(parsed.params[0]) would read out of range
     {
         sendError(fd, 431, parsed, oldnickn, "");
         return;
     }
-    std::string nickToUp = toUpper(parsed.params[0]);
 
-    //check if nickname after command is erroneus
-    if(validNick(parsed.params[0]) == 3) 
+    if (validNick(parsed.params[0]) == 3)
     {
         sendError(fd, 432, parsed, oldnickn, "");
         return;
     }
 
-    //check if nickname already exists    
-    if(fdByNickUp.find(nickToUp) != fdByNickUp.end())
+    std::string nickToUp = toUpper(parsed.params[0]);
+
+    //reject only if the nickname is taken by a DIFFERENT client (allows re-setting your own nick / a case change)
+    std::map<std::string, int>::iterator existing = fdByNickUp.find(nickToUp);
+    if (existing != fdByNickUp.end() && existing->second != fd)
     {
         sendError(fd, 433, parsed, oldnickn, "");
         return;
     }
 
-    //success case:
-    clientsByFd[fd].setNickname(parsed.params[0]);
-    clientsByFd[fd].setNicknameToUp(nickToUp);
+    bool wasRegistered = client.getRegistered();
 
-    //search if oldnickname exists in fdByNickUp, if yes erase it
-    std::map<std::string, int>::iterator it;
-    it = fdByNickUp.find(toUpper(oldnickn));
-    if (it != fdByNickUp.end())
+    //update the nick lookup map
+    if (!oldnickn.empty())
     {
-        fdByNickUp.erase(it);
-    }    
-    fdByNickUp[nickToUp] = fd; // and add in the map fdByNickUp the new nickname
-    //std::cout << clientsByFd[fd].getNicknameToUp() << std::endl; //testin the clientsByFd is filled
+        std::map<std::string, int>::iterator oldIt = fdByNickUp.find(toUpper(oldnickn));
+        if (oldIt != fdByNickUp.end())
+            fdByNickUp.erase(oldIt);
+    }
+    client.setNickname(parsed.params[0]);
+    client.setNicknameToUp(nickToUp);
+    fdByNickUp[nickToUp] = fd;
 
-    //set as registered if..
-    if(clientsByFd[fd].getPassOk() && ! clientsByFd[fd].getUsername().empty()) //if all 3 required fileds for registration are ok
+    if (wasRegistered)
     {
-        clientsByFd[fd].setRegistered(true);
-        sendNotification(fd, 1 , parsed, parsed.params[0], "");
+        //registered client changed nick: notify the client itself and everyone sharing a channel (deduplicated)
+        std::string user = client.getUsername();
+        if (user.empty()) user = "unknown";
+        std::string nickMsg = ":" + oldnickn + "!" + user + "@localhost NICK " + parsed.params[0];
+
+        std::set<int> recipients;
+        recipients.insert(fd);
+        const std::set<std::string>& chans = client.getChannels();
+        for (std::set<std::string>::const_iterator cit = chans.begin(); cit != chans.end(); ++cit)
+        {
+            std::map<std::string, Channel>::iterator chanIt = channels.find(*cit);
+            if (chanIt != channels.end())
+            {
+                const std::set<int>& us = chanIt->second.getUsers();
+                for (std::set<int>::const_iterator uit = us.begin(); uit != us.end(); ++uit)
+                    recipients.insert(*uit);
+            }
+        }
+        for (std::set<int>::const_iterator rit = recipients.begin(); rit != recipients.end(); ++rit)
+            sendMsg(*rit, nickMsg);
+    }
+    else if (client.getPassOk() && !client.getUsername().empty())
+    {
+        //initial registration just completed (PASS + NICK + USER all present)
+        client.setRegistered(true);
+        sendNotification(fd, 1, parsed, parsed.params[0], "");
     }
 }
 
@@ -298,14 +323,14 @@ static void handleNick(int fd, const ParsedMessage& parsed, std::map<int, Client
 static int validUser(int fd, const ParsedMessage& parsed)
 {
     (void)fd;
-    std::string user = parsed.params[0];
-    for(size_t i = 0; i < user.size(); i++)
+    const std::string& user = parsed.params[0];
+    if (user.empty())
+        return 0;
+    for (size_t i = 0; i < user.size(); i++)
     {
         unsigned char c = static_cast<unsigned char>(user[i]);
-        if(!std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') 
-        {            
+        if (!(std::isalnum(c) || c == '_' || c == '-')) //allow letters, digits, '_' and '-'
             return 0;
-        }
     }
     return 1;
 }
@@ -344,11 +369,12 @@ static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client
     }
     if(!validUser(fd, parsed)) //if username has an invalid char
     {
-        sendMsg(fd, "ERROR :Invalid username (must contain only letters/numbers)");
+        sendMsg(fd, "ERROR :Invalid username (only letters, numbers, '_' and '-' allowed)");
+        return;
     }
-    if(parsed.params[0].size() > 10) //if username is big
+    if(parsed.params[0].size() > 10) //if username is too long
     {
-        sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
+        sendMsg(fd, "ERROR :Invalid username (max 10 characters)");
         return;
     }
     //success case
@@ -360,9 +386,9 @@ static void handleUser(int fd, const ParsedMessage& parsed, std::map<int, Client
     {
         realName = buildRealName(parsed);
     }
-    if (realName.size() > 50)//if real name is big
+    if (realName.size() > 50)//if real name is too long
     {
-        sendMsg(fd, "ERROR :Invalid username (must contain maximum 10 digits)");
+        sendMsg(fd, "ERROR :Realname too long (max 50 characters)");
         return;
     }
     clientsByFd[fd].setRealname(realName);
@@ -435,19 +461,6 @@ static void handlePrivmsg(int senderFd, const ParsedMessage& parsed, std::map<in
                         + " PRIVMSG "+ receiver + std::string(" :") + parsed.params[1];
         sendMsg(receiverFd, msg);
     }    
-}
-
-void handleCap(int fd, const ParsedMessage& parsed)
-{
-    if (parsed.params.size() > 0 && parsed.params[0] == "LS")
-    {
-        sendMsg(fd, ":ircserv CAP * LS :");
-    }
-    else if (parsed.params.size() > 0 && parsed.params[0] == "REQ")
-    {
-        std::string reqCap = (parsed.params.size() > 1) ? parsed.params[1] : "";
-        sendMsg(fd, ":ircserv CAP * NAK :" + reqCap);
-    }
 }
 
 void handlePart(int fd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, std::map<std::string, Channel>& channels)
@@ -788,10 +801,11 @@ void handleMode(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
     }
 
     std::string modeString = parsed.params[1];
-    std::string appliedModes = "";
-    std::string appliedParams = "";
+    std::string appliedModes;
+    std::string appliedParams;
     char sign = '+';
-    size_t paramIdx = 2;
+    char lastSign = 0;      //last sign actually written to appliedModes
+    size_t paramIdx = 2;    //index of the next mode argument in parsed.params
 
     for (size_t i = 0; i < modeString.length(); ++i)
     {
@@ -802,65 +816,18 @@ void handleMode(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
             continue;
         }
 
+        bool changed = false;
+        std::string param;
+
         if (c == 'i')
         {
-            if (sign == '+')
-            {
-                if (!channel.hasMode('i'))
-                {
-                    channel.addMode('i');
-                    if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '+')
-                    {
-                        if (appliedModes.empty() || (appliedModes.find('+') == std::string::npos && sign == '+'))
-                            appliedModes += "+";
-                        else if (appliedModes[appliedModes.size() - 1] == '-')
-                            appliedModes += "+";
-                    }
-                    appliedModes += "i";
-                }
-            }
-            else
-            {
-                if (channel.hasMode('i'))
-                {
-                    channel.removeMode('i');
-                    if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '-')
-                    {
-                        appliedModes += "-";
-                    }
-                    appliedModes += "i";
-                }
-            }
+            if (sign == '+' && !channel.hasMode('i')) { channel.addMode('i'); changed = true; }
+            else if (sign == '-' && channel.hasMode('i')) { channel.removeMode('i'); changed = true; }
         }
         else if (c == 't')
         {
-            if (sign == '+')
-            {
-                if (!channel.hasMode('t'))
-                {
-                    channel.addMode('t');
-                    if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '+')
-                    {
-                        if (appliedModes.empty() || (appliedModes.find('+') == std::string::npos && sign == '+'))
-                            appliedModes += "+";
-                        else if (appliedModes[appliedModes.size() - 1] == '-')
-                            appliedModes += "+";
-                    }
-                    appliedModes += "t";
-                }
-            }
-            else
-            {
-                if (channel.hasMode('t'))
-                {
-                    channel.removeMode('t');
-                    if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '-')
-                    {
-                        appliedModes += "-";
-                    }
-                    appliedModes += "t";
-                }
-            }
+            if (sign == '+' && !channel.hasMode('t')) { channel.addMode('t'); changed = true; }
+            else if (sign == '-' && channel.hasMode('t')) { channel.removeMode('t'); changed = true; }
         }
         else if (c == 'k')
         {
@@ -871,31 +838,19 @@ void handleMode(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
                     std::string keyVal = parsed.params[paramIdx++];
                     channel.addMode('k');
                     channel.setKey(keyVal);
-                    if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '+')
-                    {
-                        if (appliedModes.empty() || (appliedModes.find('+') == std::string::npos && sign == '+'))
-                            appliedModes += "+";
-                        else if (appliedModes[appliedModes.size() - 1] == '-')
-                            appliedModes += "+";
-                    }
-                    appliedModes += "k";
-                    if (!appliedParams.empty()) appliedParams += " ";
-                    appliedParams += keyVal;
+                    param = keyVal;
+                    changed = true;
                 }
             }
             else
             {
+                if (paramIdx < parsed.params.size())
+                    paramIdx++;             //consume the optional key argument if one was given
                 if (channel.hasMode('k'))
                 {
-                    if (paramIdx < parsed.params.size())
-                        paramIdx++;
                     channel.removeMode('k');
                     channel.setKey("");
-                    if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '-')
-                    {
-                        appliedModes += "-";
-                    }
-                    appliedModes += "k";
+                    changed = true;
                 }
             }
         }
@@ -911,16 +866,8 @@ void handleMode(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
                     {
                         channel.addMode('l');
                         channel.setUserLimit(limit);
-                        if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '+')
-                        {
-                            if (appliedModes.empty() || (appliedModes.find('+') == std::string::npos && sign == '+'))
-                                appliedModes += "+";
-                            else if (appliedModes[appliedModes.size() - 1] == '-')
-                                appliedModes += "+";
-                        }
-                        appliedModes += "l";
-                        if (!appliedParams.empty()) appliedParams += " ";
-                        appliedParams += limitVal;
+                        param = limitVal;
+                        changed = true;
                     }
                 }
             }
@@ -930,55 +877,41 @@ void handleMode(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
                 {
                     channel.removeMode('l');
                     channel.setUserLimit(-1);
-                    if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '-')
-                    {
-                        appliedModes += "-";
-                    }
-                    appliedModes += "l";
+                    changed = true;
                 }
             }
         }
         else if (c == 'o')
         {
-            if (paramIdx < parsed.params.size())
+            if (paramIdx >= parsed.params.size())
+                continue;
+            std::string targetNick = parsed.params[paramIdx++];
+            std::map<std::string, int>::iterator tIt = fdByNickUp.find(toUpper(targetNick));
+            if (tIt == fdByNickUp.end())
             {
-                std::string targetNick = parsed.params[paramIdx++];
-                std::string targetNickUp = toUpper(targetNick);
-                std::map<std::string, int>::iterator tIt = fdByNickUp.find(targetNickUp);
-                if (tIt != fdByNickUp.end())
-                {
-                    int targetFd = tIt->second;
-                    if (channel.hasUser(targetFd))
-                    {
-                        if (sign == '+')
-                        {
-                            channel.addOperator(targetFd);
-                            if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '+')
-                            {
-                                if (appliedModes.empty() || (appliedModes.find('+') == std::string::npos && sign == '+'))
-                                    appliedModes += "+";
-                                else if (appliedModes[appliedModes.size() - 1] == '-')
-                                    appliedModes += "+";
-                            }
-                            appliedModes += "o";
-                        }
-                        else
-                        {
-                            channel.removeOperator(targetFd);
-                            if (appliedModes.empty() || appliedModes[appliedModes.size() - 1] != '-')
-                            {
-                                appliedModes += "-";
-                            }
-                            appliedModes += "o";
-                        }
-                        if (!appliedParams.empty()) appliedParams += " ";
-                        appliedParams += targetNick;
-                    }
-                }
-                else
-                {
-                    sendError(fd, 401, parsed, nick, "");
-                }
+                sendError(fd, 401, parsed, nick, "");
+                continue;
+            }
+            int targetFd = tIt->second;
+            if (!channel.hasUser(targetFd))
+                continue;   //target not on this channel: ignore
+            if (sign == '+' && !channel.isOperator(targetFd)) { channel.addOperator(targetFd); param = targetNick; changed = true; }
+            else if (sign == '-' && channel.isOperator(targetFd)) { channel.removeOperator(targetFd); param = targetNick; changed = true; }
+        }
+        //unknown mode characters are silently ignored
+
+        if (changed)
+        {
+            if (sign != lastSign)
+            {
+                appliedModes += sign;
+                lastSign = sign;
+            }
+            appliedModes += c;
+            if (!param.empty())
+            {
+                if (!appliedParams.empty()) appliedParams += " ";
+                appliedParams += param;
             }
         }
     }
@@ -992,57 +925,20 @@ void handleMode(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
     }
 }
 
-void handleNotice(int senderFd, const ParsedMessage& parsed, std::map<int, Client>& clientsByFd, 
-                    std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels)
-{
-    std::string host = "localhost";
-    std::string senderNick = clientsByFd[senderFd].getNickname();
-
-    if(parsed.params.size() < 2)
-        return;
-
-    std::string receiver = parsed.params[0];
-    if(receiver[0] == '#')
-    {
-        std::map<std::string, Channel>::iterator it = channels.find(receiver);
-        if (it == channels.end())
-            return;
-
-        Channel& chan = it->second;
-        if(chan.hasUser(senderFd))
-        {
-            std::string msg = std::string(":") + senderNick + std::string("!") 
-                            + clientsByFd[senderFd].getUsername() + "@" +  host 
-                            + " NOTICE "+ receiver + std::string(" :") + parsed.params[1];
-            sendToChannel(senderFd, msg, chan);
-        }
-    }
-    else
-    {
-        std::map<std::string, int>::iterator it = fdByNickUp.find(toUpper(receiver));
-        if(it == fdByNickUp.end())
-            return;
-        
-        int receiverFd = it->second;
-        std::string msg = std::string(":") + senderNick + std::string("!") 
-                        + clientsByFd[senderFd].getUsername() + "@" +  host 
-                        + " NOTICE "+ receiver + std::string(" :") + parsed.params[1];
-        sendMsg(receiverFd, msg);
-    }
-}
-
-
 int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsByFd, 
                 std::map<std::string, int>& fdByNickUp, const std::string& serverPass, 
                 std::map<std::string, Channel>& channels)
 {
     Client& client = clientsByFd[fd];
 
+    // Ignore empty lines (e.g. a bare CRLF) instead of replying 421 Unknown command
+    if (parsed.command.empty())
+        return 1;
+
     // Registration guard
     if (!client.getRegistered() && 
         parsed.command != "PASS" && parsed.command != "NICK" && 
-        parsed.command != "USER" && parsed.command != "CAP" && 
-        parsed.command != "QUIT")
+        parsed.command != "USER" && parsed.command != "QUIT")
     {
         sendError(fd, 451, parsed, client.getNickname(), "");
         return 1;
@@ -1054,7 +950,7 @@ int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsBy
     }        
     else if (parsed.command == "NICK")
     {
-        handleNick(fd, parsed, clientsByFd, fdByNickUp);
+        handleNick(fd, parsed, clientsByFd, fdByNickUp, channels);
     }        
     else if (parsed.command == "PASS")
     {
@@ -1064,10 +960,6 @@ int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsBy
     else if (parsed.command == "USER")
     {
         handleUser(fd, parsed, clientsByFd);
-    }
-    else if (parsed.command == "CAP")
-    {
-        handleCap(fd, parsed);
     }
     else if (parsed.command == "PRIVMSG")
     {
@@ -1100,10 +992,6 @@ int handleCommand(int fd, ParsedMessage parsed, std::map<int, Client>& clientsBy
     else if (parsed.command == "MODE")
     {
         handleMode(fd, parsed, clientsByFd, fdByNickUp, channels);
-    }
-    else if (parsed.command == "NOTICE")
-    {
-        handleNotice(fd, parsed, clientsByFd, fdByNickUp, channels);
     }
     else
     {

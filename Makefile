@@ -14,25 +14,17 @@ CLIENT_OBJ = $(CLIENT_SRC:%.cpp=obj/%.o)
 
 all: $(NAME)
 
-# create obj folder automatically
-obj:
-	mkdir -p obj
-
-# server binary
-$(NAME): obj $(OBJ)
+$(NAME): $(OBJ)
 	$(CXX) $(CXXFLAGS) $(OBJ) -o $(NAME)
 
-# client binary
-client: obj $(CLIENT_OBJ)
+client: $(CLIENT_OBJ)
 	$(CXX) $(CXXFLAGS) $(CLIENT_OBJ) -o $(CLIENT)
 
-# compile server objects
-obj/%.o: %.cpp
+obj/%.o: %.cpp | obj
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# compile client object
-obj/%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+obj:
+	mkdir -p obj
 
 clean:
 	rm -rf obj
@@ -42,4 +34,4 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re client obj
+.PHONY: all clean fclean re client

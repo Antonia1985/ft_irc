@@ -1,6 +1,4 @@
 #include "client.hpp"
-#include <unistd.h>
-#include "commandHandler.hpp"
 
 Client::Client()
     : fd(-1),
@@ -48,61 +46,6 @@ void Client::eraseFromBuffer(size_t pos, size_t len)
     buffer.erase(pos, len);
 }
 
-void removeFromfdByNickUp(std::map<std::string, int>& fdByNickUp, std::string nickUp)
-{
-    std::map<std::string, int>::iterator it;
-    it = fdByNickUp.find(nickUp);
-    if (it != fdByNickUp.end())
-    {
-        fdByNickUp.erase(it);
-    }
-}
-
-void removeClient(std::vector<pollfd>::iterator it, 
-                std::map<int, Client>& clients, std::vector<pollfd>& fds, std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels)
-{
-
-    int fd = it->fd;
-    std::string nick = clients[fd].getNickname();
-    std::string user = clients[fd].getUsername();
-    if (user.empty())
-        user = "unknown";
-    std::string nickUp = clients[fd].getNicknameToUp();
-    const std::set<std::string>& joinedChans = clients[fd].getChannels();
-
-    std::string quitMsg = ":" + nick + "!" + user + "@localhost QUIT :Disconnected";
-
-    // remove client from channels they are in
-    for (std::set<std::string>::const_iterator cit = joinedChans.begin(); cit != joinedChans.end(); ++cit)
-    {
-        std::map<std::string, Channel>::iterator chanIt = channels.find(*cit);
-        if (chanIt != channels.end())
-        {
-            Channel& channel = chanIt->second;
-            const std::set<int>& users = channel.getUsers();
-            for (std::set<int>::const_iterator uIt = users.begin(); uIt != users.end(); ++uIt)
-            {
-                if (*uIt != fd)
-                {
-                    sendMsg(*uIt, quitMsg);
-                }
-            }
-            channel.removeUser(fd);
-            channel.removeOperator(fd);
-            
-            // remove channel if empty
-            if (channel.getUsers().empty())
-            {
-                channels.erase(chanIt);
-            }
-        }
-    }
-
-    close(fd);
-    removeFromfdByNickUp(fdByNickUp, nickUp);
-    clients.erase(fd);    
-    fds.erase(it);
-}
 void Client::addChannel(std::string& channelName) {
     this->channels.insert(channelName);
 }
@@ -114,9 +57,3 @@ void Client::removeChannel(std::string& channelName) {
 const std::set<std::string>& Client::getChannels() const {
     return channels;
 }
-/*
-Iterator invalidation risk
-removeClient(it, clients, fds); erases from fds while iterating over it . 
-Your break avoids some damage, but it is fragile. 
-Better make removeClient return the next iterator later.
-*/

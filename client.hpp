@@ -50,6 +50,3 @@ class Client
         const std::set<std::string>& getChannels() const;
 
 };
-
-void removeClient(std::vector<pollfd>::iterator it, 
-                std::map<int, Client>& clients, std::vector<pollfd>& fds, std::map<std::string, int>& fdByNickUp, std::map<std::string, Channel>& channels);
