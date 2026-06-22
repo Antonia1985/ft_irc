@@ -1011,6 +1011,11 @@ void handleMode(int fd, const ParsedMessage& parsed, std::map<int, Client>& clie
                 }
             }
         }
+        else
+        {
+            std::string modeChar(1, c);
+            sendMsg(fd, ":ircserv 472 " + nick + " " + modeChar + " :is unknown mode char to me");
+        }
     }
 
     if (!appliedModes.empty())

@@ -93,6 +93,11 @@ void sendError(int clientFd, int error, ParsedMessage parsed, std::string nickna
     {
         msg = std::string(":ircserv 471 ") + nickname + " " + channel + " :Cannot join channel (+l)";
     }
+    else if (error == 472)
+    {
+        std::string modeChar = (parsed.params.size() > 1) ? parsed.params[1] : "?";
+        msg = std::string(":ircserv 472 ") + nickname + " " + modeChar + " :is unknown mode char to me";
+    }
     else if (error == 473)
     {
         msg = std::string(":ircserv 473 ") + nickname + " " + channel + " :Cannot join channel (+i)";
